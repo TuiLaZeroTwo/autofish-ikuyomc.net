@@ -116,8 +116,8 @@ public class AutoFish extends Module {
         .name("scan-frequency")
         .description("Screen scans happen every N ticks (higher = less CPU).")
         .defaultValue(2)
-        .range(1, 10)
-        .sliderMax(6)
+        .range(1, 20)
+        .sliderMax(20)
         .build()
     );
 
