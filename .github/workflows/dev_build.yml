@@ -24,3 +24,22 @@ jobs:
 
       - name: Build with Gradle
         run: ./gradlew build
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tlz-autofish
+          path: build/libs/*.jar
+          if-no-files-found: error
+
+      - name: Create Nightly Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: nightly
+          name: Nightly Build
+          body: Auto-built from latest commit.
+          allowUpdates: true
+          removeArtifacts: true
+          artifacts: build/libs/*.jar
+          makeLatest: true
+          token: ${{ secrets.GITHUB_TOKEN }}
