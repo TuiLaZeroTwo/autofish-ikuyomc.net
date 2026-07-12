@@ -186,7 +186,7 @@ public class AutoFish extends Module {
     private int waitingTicks;
 
     public AutoFish() {
-        super(TLZAutoFish.CATEGORY, "auto-fisch", "Auto fish with Stardew-style minigame support for IkuyoMC.");
+        super(TLZAutoFish.CATEGORY, "auto-fisch", "The ultimate addon for fishing on IkuyoMC.net.");
         try {
             Field f = Module.class.getField("title");
             f.setAccessible(true);
