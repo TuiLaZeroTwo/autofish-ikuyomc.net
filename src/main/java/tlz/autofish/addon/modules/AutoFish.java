@@ -538,14 +538,29 @@ public class AutoFish extends Module {
 
     private int findCursorX(ByteBuffer buf, int w, int h, int threshold) {
         for (int col = 0; col < w; col++) {
+            int whiteCount = 0;
             for (int row = 0; row < h; row++) {
                 int idx = (row * w + col) * 4;
                 int r = buf.get(idx) & 0xFF;
                 int g = buf.get(idx + 1) & 0xFF;
                 int b = buf.get(idx + 2) & 0xFF;
-                if (r > threshold && g > threshold && b > threshold) {
-                    return col;
+                if (r > threshold && g > threshold && b > threshold) whiteCount++;
+            }
+            if (whiteCount >= 2) {
+                int startCol = col;
+                while (startCol > 0) {
+                    int cnt = 0;
+                    for (int r2 = 0; r2 < h; r2++) {
+                        int i = (r2 * w + (startCol - 1)) * 4;
+                        int rv = buf.get(i) & 0xFF;
+                        int gv = buf.get(i + 1) & 0xFF;
+                        int bv = buf.get(i + 2) & 0xFF;
+                        if (rv > threshold && gv > threshold && bv > threshold) cnt++;
+                    }
+                    if (cnt >= 1) startCol--;
+                    else break;
                 }
+                return startCol;
             }
         }
         return -1;
