@@ -326,10 +326,13 @@ public class AutoFish extends Module {
         }
 
         if (autoMinigame.get()) {
-            log("Catch delay done, scanning for minigame bar");
+            log("Catch delay done, reeling to trigger minigame");
+            rightClick();
             inMinigame = true;
             minigameTimer = 0;
             barFound = false;
+            wasHooked = false;
+            catchDelayLeft = 0.0;
         } else {
             log("Catch delay done, reeling");
             useRod();
