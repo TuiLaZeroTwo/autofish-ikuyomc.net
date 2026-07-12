@@ -19,12 +19,6 @@ repositories {
     }
 }
 
-loom {
-    layeredMappings {
-        mappings("net.fabricmc:yarn:${libs.versions.yarn.mappings.get()}:v2")
-    }
-}
-
 dependencies {
     // Fabric
     minecraft(libs.minecraft)
