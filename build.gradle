@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version '1.14.10'
+    id 'fabric-loom' version '1.14-SNAPSHOT'
     id 'maven-publish'
 }
 
@@ -11,30 +11,18 @@ repositories {
     maven { url "https://maven.meteordev.org/snapshots" }
 }
 
-loom {
-    splitEnvironmentSourceSets()
-
-    mods {
-        "tlz-autofish" {
-            sourceSet sourceSets.main
-            sourceSet sourceSets.client
-        }
-    }
-}
-
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings loom.officialMojangMappings()
+    mappings(variantOf("net.fabricmc:yarn:${project.yarn_version}") { classifier("v2") })
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "meteordevelopment:meteor-client:${project.minecraft_version}-SNAPSHOT"
 }
 
 processResources {
-    def version = project.version
-    inputs.property "version", version
+    inputs.property "version", project.version
 
     filesMatching("fabric.mod.json") {
-        expand "version": version,
+        expand "version": project.version,
                 "mc_version": project.minecraft_version,
                 "gh_hash": System.getenv("GITHUB_SHA") ?: ""
     }
@@ -47,27 +35,12 @@ tasks.withType(JavaCompile).configureEach {
 
 java {
     withSourcesJar()
-
     sourceCompatibility = JavaVersion.VERSION_21
     targetCompatibility = JavaVersion.VERSION_21
 }
 
 jar {
-    def projectName = project.name
-    inputs.property "projectName", projectName
-
     from("LICENSE") {
-        rename { "${it}_$projectName" }
-    }
-}
-
-publishing {
-    publications {
-        create("mavenJava", MavenPublication) {
-            from components.java
-        }
-    }
-
-    repositories {
+        rename { "${it}_${project.name}" }
     }
 }
