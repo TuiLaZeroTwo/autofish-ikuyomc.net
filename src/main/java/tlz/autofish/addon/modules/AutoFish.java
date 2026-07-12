@@ -94,14 +94,7 @@ public class AutoFish extends Module {
         .build()
     );
 
-    private final Setting<Integer> minigameTimeout = sgGeneral.add(new IntSetting.Builder()
-        .name("minigame-timeout")
-        .description("Max seconds to wait before giving up on the minigame.")
-        .defaultValue(8)
-        .range(2, 20)
-        .sliderMax(15)
-        .build()
-    );
+    private static final int MINIGAME_TIMEOUT = 30;
 
     private final Setting<Integer> clickTolerance = sgGeneral.add(new IntSetting.Builder()
         .name("click-tolerance")
@@ -265,7 +258,7 @@ public class AutoFish extends Module {
             return;
         }
 
-        if (minigameTimer > minigameTimeout.get() * 20) {
+        if (minigameTimer > MINIGAME_TIMEOUT * 20) {
             log("Minigame timeout");
             useRod();
             return;
