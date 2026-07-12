@@ -336,22 +336,6 @@ public class AutoFish extends Module {
         }
     }
 
-        if (catchDelayLeft > 0) {
-            catchDelayLeft -= TickRate.INSTANCE.getTickRate() / 20.0;
-            return;
-        }
-
-        if (autoMinigame.get()) {
-            log("Catch delay done, scanning for minigame bar");
-            inMinigame = true;
-            minigameTimer = 0;
-            barFound = false;
-        } else {
-            log("Catch delay done, reeling");
-            useRod();
-        }
-    }
-
     private void tickMinigame() {
         minigameTimer++;
 
