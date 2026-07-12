@@ -407,13 +407,11 @@ public class AutoFish extends Module {
 
         int bfbW = (int) (barScreenWidth.get() * sc);
         int bfbH = (int) (barScreenHeight.get() * sc);
-        int bfbX = (fbW - bfbW) / 2;
-        int bfbY = (fbH - bfbH) / 2;
 
         int margin = 10;
         int readW = Math.min(bfbW + margin * 2, fbW);
         int readH = Math.min(bfbH + margin * 2, fbH) / 2;
-        int readX = Math.max(0, bfbX - margin);
+        int readX = Math.max(0, (fbW - readW) / 2);
         int readY = Math.max(0, (fbH - readH) / 2);
         readW = Math.min(readW, fbW - readX);
         readH = Math.min(readH, fbH - readY);
@@ -423,84 +421,63 @@ public class AutoFish extends Module {
         ByteBuffer buf = BufferUtils.createByteBuffer(readW * readH * 4);
         GlStateManager._readPixels(readX, readY, readW, readH, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, MemoryUtil.memAddress(buf));
 
-        int barTopRowRel = -1;
-        int bestScore = 0;
+        int hueTol = greenHueTolerance.get();
+        int bestRow = -1;
+        int bestGStart = -1, bestGEnd = -1;
+        int bestWidth = 0;
 
         for (int row = 0; row < readH; row++) {
-            int count = 0;
-            for (int col = 0; col < readW; col += 2) {
+            int gStart = -1, gEnd = -1;
+            boolean inGreen = false;
+
+            for (int col = 0; col < readW; col++) {
                 int idx = (row * readW + col) * 4;
-                int r = buf.get(idx) & 0xFF;
-                int g = buf.get(idx + 1) & 0xFF;
-                int b = buf.get(idx + 2) & 0xFF;
-                if (isBarPixel(r, g, b)) count++;
-            }
-            if (count > bestScore) {
-                bestScore = count;
-                barTopRowRel = row;
-            }
-        }
-
-        if (bestScore < barColorMinPixels.get()) {
-            log("Bar scan: bestScore=" + bestScore + " < min=" + barColorMinPixels.get() + " — no bar found");
-            return;
-        }
-
-        int barRelY = barTopRowRel;
-        int barHeightFound = bfbH;
-
-        barFbX = readX;
-        barFbY = readY + barRelY;
-        barFbW = bfbW;
-        barFbH = bfbH;
-
-        int midRow = Math.min(barRelY + barHeightFound / 2, readH - 1);
-        if (midRow < 0) midRow = 0;
-
-        int gStart = -1, gEnd = -1;
-        boolean inGreen = false;
-        int hueTol = greenHueTolerance.get();
-        int scanTop = Math.max(0, midRow - 1);
-        int scanBot = Math.min(readH - 1, midRow + 1);
-        int scanRows = scanBot - scanTop + 1;
-
-        for (int col = 0; col < readW; col++) {
-            int greenCount = 0;
-            for (int r = scanTop; r <= scanBot; r++) {
-                int idx = (r * readW + col) * 4;
                 int rv = buf.get(idx) & 0xFF;
                 int gv = buf.get(idx + 1) & 0xFF;
                 int bv = buf.get(idx + 2) & 0xFF;
                 Color.RGBtoHSB(rv, gv, bv, hsbBuf);
                 float hueDeg = hsbBuf[0] * 360;
-                if (hsbBuf[1] > 0.5f && hsbBuf[2] > 0.3f
-                    && Math.abs(hueDeg - 129) < hueTol) {
-                    greenCount++;
+                boolean isGreen = hsbBuf[1] > 0.5f && hsbBuf[2] > 0.3f
+                    && Math.abs(hueDeg - 129) < hueTol;
+
+                if (isGreen && !inGreen) {
+                    gStart = readX + col;
+                    inGreen = true;
+                } else if (!isGreen && inGreen) {
+                    gEnd = readX + col;
+                    inGreen = false;
+                    break;
                 }
             }
-            boolean isGreen = greenCount > scanRows / 2;
+            if (inGreen) {
+                gEnd = readX + readW;
+            }
 
-            if (isGreen && !inGreen) {
-                gStart = readX + col;
-                inGreen = true;
-            } else if (!isGreen && inGreen) {
-                gEnd = readX + col;
-                inGreen = false;
-                break;
+            if (gStart >= 0) {
+                int w = gEnd - gStart;
+                if (w > bestWidth) {
+                    bestWidth = w;
+                    bestRow = row;
+                    bestGStart = gStart;
+                    bestGEnd = gEnd;
+                }
             }
         }
-        if (inGreen) {
-            gEnd = readX + readW;
+
+        if (bestRow < 0) {
+            log("Green zone scan: none found");
+            return;
         }
 
-        if (gStart >= 0 && gEnd > gStart + 3) {
-            greenStartFb = gStart;
-            greenEndFb = gEnd;
-            barFound = true;
-            log("Bar found! bestScore=" + bestScore + " greenZone=[" + greenStartFb + "," + greenEndFb + "] fbPos=[" + barFbX + "," + barFbY + " " + barFbW + "x" + barFbH + "]");
-        } else {
-            log("Bar scan: bestScore=" + bestScore + " but no green zone (gStart=" + gStart + " gEnd=" + gEnd + ")");
-        }
+        int greenFbY = readY + bestRow;
+        barFbX = readX;
+        barFbY = Math.max(0, greenFbY - bfbH / 2);
+        barFbW = bfbW;
+        barFbH = bfbH;
+        greenStartFb = bestGStart;
+        greenEndFb = bestGEnd;
+        barFound = true;
+        log("Bar found via green zone at fbY=" + greenFbY + " zone=[" + bestGStart + "," + bestGEnd + "]");
     }
 
     private void scanCursor() {
@@ -532,17 +509,21 @@ public class AutoFish extends Module {
         int cursorBot = findCursorX(botBuf, scanW, arrowScanH, brightnessMin);
 
         int newCursorX = -1;
-        if (cursorTop >= 0) newCursorX = scanX + cursorTop;
-        else if (cursorBot >= 0) newCursorX = scanX + cursorBot;
+        String cursorLoc = "";
+        if (cursorTop >= 0) {
+            newCursorX = scanX + cursorTop;
+            cursorLoc = "above";
+        } else if (cursorBot >= 0) {
+            newCursorX = scanX + cursorBot;
+            cursorLoc = "below";
+        }
 
         if (newCursorX < 0) {
-            log("Cursor scan: no white arrow found above or below bar");
+            log("Cursor scan: not found (top=" + cursorTop + " bot=" + cursorBot + ")");
             return;
         }
         cursorFbX = newCursorX;
-
-        int tol = clickTolerance.get();
-        log("Cursor at fbX=" + cursorFbX + " greenZone=[" + greenStartFb + "," + greenEndFb + "] tol=" + tol + " inZone=" + (cursorFbX >= greenStartFb + tol && cursorFbX <= greenEndFb - tol));
+        log("Cursor " + cursorLoc + " bar at fbX=" + cursorFbX + " greenZone=[" + greenStartFb + "," + greenEndFb + "] inZone=" + (cursorFbX >= greenStartFb + clickTolerance.get() && cursorFbX <= greenEndFb - clickTolerance.get()));
         if (cursorFbX >= greenStartFb + tol && cursorFbX <= greenEndFb - tol) {
             log("Cursor in green zone, clicking!");
             useRod();
