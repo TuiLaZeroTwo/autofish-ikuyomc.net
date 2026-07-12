@@ -13,7 +13,7 @@ repositories {
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings(variantOf("net.fabricmc:yarn:${project.yarn_version}") { classifier("v2") })
+    mappings "net.fabricmc:yarn:${project.yarn_version}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "meteordevelopment:meteor-client:${project.minecraft_version}-SNAPSHOT"
 }
