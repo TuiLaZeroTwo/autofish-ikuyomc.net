@@ -14,6 +14,7 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.system.MemoryUtil;
 import java.nio.ByteBuffer;
 import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import org.lwjgl.BufferUtils;
 import static meteordevelopment.meteorclient.utils.Utils.rightClick;
 
@@ -143,7 +144,17 @@ public class AutoFish extends Module {
     private int recheckDelay;
 
     public AutoFish() {
-        super(TLZAutoFish.CATEGORY, "auto-fish", "Auto fish with Stardew-style minigame support for IkuyoMC.");
+        super(TLZAutoFish.CATEGORY, "auto-fisch", "Auto fish with Stardew-style minigame support for IkuyoMC.");
+        try {
+            Field f = Module.class.getField("title");
+            f.setAccessible(true);
+            Field modifiers = Field.class.getDeclaredField("modifiers");
+            modifiers.setAccessible(true);
+            modifiers.setInt(f, f.getModifiers() & ~Modifier.FINAL);
+            f.set(this, "Auto-Fisch");
+        } catch (Exception e) {
+            // Fallback: title will be "Auto Fisch" from nameToTitle
+        }
     }
 
     @Override
