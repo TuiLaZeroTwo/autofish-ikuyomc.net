@@ -22,6 +22,7 @@ repositories {
 dependencies {
     // Fabric
     minecraft(libs.minecraft)
+    mappings("net.fabricmc:yarn:${libs.versions.yarn.mappings.get()}:v2")
     implementation(libs.fabric.loader)
 
     // Meteor
