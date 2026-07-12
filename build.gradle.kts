@@ -1,5 +1,5 @@
 plugins {
-    alias(libs.plugins.fabric.loom)
+    id("fabric-loom") version "1.14-SNAPSHOT"
 }
 
 base {
@@ -9,6 +9,11 @@ base {
 }
 
 repositories {
+    mavenCentral()
+    maven {
+        name = "Fabric"
+        url = uri("https://maven.fabricmc.net/")
+    }
     maven {
         name = "meteor-maven"
         url = uri("https://maven.meteordev.org/releases")
@@ -23,12 +28,12 @@ val yarnVersion = libs.versions.yarn.mappings.get()
 
 dependencies {
     // Fabric
-    minecraft(libs.minecraft)
-    add("mappings", "net.fabricmc:yarn:${yarnVersion}:v2")
-    implementation(libs.fabric.loader)
+    minecraft("com.mojang:minecraft:${libs.versions.minecraft.get()}")
+    mappings("net.fabricmc:yarn:${yarnVersion}:v2")
+    implementation("net.fabricmc:fabric-loader:${libs.versions.fabric.loader.get()}")
 
     // Meteor
-    implementation(libs.meteor.client)
+    implementation("meteordevelopment:meteor-client:${libs.versions.meteor.get()}")
 }
 
 java {
