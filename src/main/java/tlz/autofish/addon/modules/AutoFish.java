@@ -185,6 +185,7 @@ public class AutoFish extends Module {
     private boolean wasHooked;
     private boolean inMinigame;
     private int minigameTimer;
+    private int waitingTicks;
 
     public AutoFish() {
         super(TLZAutoFish.CATEGORY, "auto-fisch", "Auto fish with Stardew-style minigame support for IkuyoMC.");
@@ -221,6 +222,7 @@ public class AutoFish extends Module {
         wasHooked = false;
         inMinigame = false;
         minigameTimer = 0;
+        waitingTicks = 0;
     }
 
     private void log(String msg) {
@@ -303,11 +305,17 @@ public class AutoFish extends Module {
 
         if (!isStateBobbing()) return;
 
+        waitingTicks++;
+
         if (!wasHooked) {
             if (hasCaughtFish()) {
                 log("Fish bite detected!");
                 catchDelayLeft = randomizeDelay(catchDelay.get(), catchDelayVariance.get());
                 wasHooked = true;
+                waitingTicks = 0;
+            } else if (waitingTicks > 600) {
+                log("Waiting timeout (30s), reeling anyway");
+                useRod();
             }
             return;
         }
@@ -351,6 +359,7 @@ public class AutoFish extends Module {
         castDelayLeft = randomizeDelay(castDelay.get(), castDelayVariance.get());
         barFound = false;
         recheckDelay = 5;
+        waitingTicks = 0;
     }
 
     private boolean isStateBobbing() {
@@ -358,8 +367,11 @@ public class AutoFish extends Module {
             Field f = FishingBobberEntity.class.getDeclaredField("field_7175");
             f.setAccessible(true);
             Object val = f.get(mc.player.fishHook);
-            return val instanceof Enum<?> e && e.ordinal() == 1;
+            int ord = ((Enum<?>) val).ordinal();
+            if (debug.get()) info("Bobber state ordinal=" + ord);
+            return ord == 1;
         } catch (Exception e) {
+            if (debug.get()) info("isStateBobbing exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
             return true;
         }
     }
@@ -369,9 +381,11 @@ public class AutoFish extends Module {
         try {
             Field f = FishingBobberEntity.class.getDeclaredField("field_23232");
             f.setAccessible(true);
-            return f.getBoolean(mc.player.fishHook);
+            boolean val = f.getBoolean(mc.player.fishHook);
+            if (debug.get()) info("hasCaughtFish = " + val);
+            return val;
         } catch (Exception e) {
-            if (debug.get()) info("hasCaughtFish reflection failed: " + e.getMessage());
+            if (debug.get()) info("hasCaughtFish exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
             return false;
         }
     }
