@@ -1,17 +1,19 @@
 package tlz.autofish.addon.modules;
 
-import tlz.autofish.addon.Autofish;
+import tlz.autofish.addon.TLZAutoFish;
 import meteordevelopment.meteorclient.events.render.Render2DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
-import meteordevelopment.meteorclient.mixin.FishingHookAccessor;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.item.Items;
 import net.minecraft.item.ItemStack;
-import com.mojang.blaze3d.platform.GlStateManager;
+import net.minecraft.entity.projectile.FishingBobberEntity;
+import com.mojang.blaze3d.opengl.GlStateManager;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.system.MemoryUtil;
 import java.nio.ByteBuffer;
+import java.lang.reflect.Field;
 import org.lwjgl.BufferUtils;
 import static meteordevelopment.meteorclient.utils.Utils.rightClick;
 
@@ -141,7 +143,7 @@ public class AutoFish extends Module {
     private int recheckDelay;
 
     public AutoFish() {
-        super(Autofish.CATEGORY, "auto-fish", "Auto fish with Stardew-style minigame support for IkuyoMC.");
+        super(TLZAutoFish.CATEGORY, "auto-fish", "Auto fish with Stardew-style minigame support for IkuyoMC.");
     }
 
     @Override
@@ -166,7 +168,7 @@ public class AutoFish extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (mc.player == null || mc.level == null) return;
+        if (mc.player == null || mc.world == null) return;
 
         if (!isHoldingRod()) {
             if (state != State.IDLE) reset();
@@ -206,7 +208,7 @@ public class AutoFish extends Module {
     private boolean isHoldingRod() {
         if (mc.player == null) return false;
         ItemStack main = mc.player.getMainHandStack();
-        ItemStack off = mc.player.getOffhandStack();
+        ItemStack off = mc.player.getOffHandStack();
         return main.getItem() == Items.FISHING_ROD || off.getItem() == Items.FISHING_ROD;
     }
 
@@ -235,22 +237,22 @@ public class AutoFish extends Module {
             state = State.IDLE;
             return;
         }
-        boolean biting = false;
-        try {
-            biting = ((FishingHookAccessor) mc.player.fishHook).meteor$hasCaughtFish();
-        } catch (Exception ignored) {
-            biting = isBobberUnderwater();
-        }
-        if (biting) {
+        if (hasCaughtFish()) {
             state = State.BITE;
             timer = 0;
             barFound = false;
         }
     }
 
-    private boolean isBobberUnderwater() {
+    private boolean hasCaughtFish() {
         if (mc.player.fishHook == null) return false;
-        return mc.player.fishHook.isUnderWater();
+        try {
+            Field f = FishingBobberEntity.class.getDeclaredField("caughtFish");
+            f.setAccessible(true);
+            return f.getBoolean(mc.player.fishHook);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private void tickBite() {
@@ -324,7 +326,7 @@ public class AutoFish extends Module {
         if (readW <= 0 || readH <= 0) return;
 
         ByteBuffer buf = BufferUtils.createByteBuffer(readW * readH * 4);
-        GlStateManager.readPixels(readX, readY, readW, readH, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buf);
+        GlStateManager._readPixels(readX, readY, readW, readH, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, MemoryUtil.memAddress(buf));
 
         int barTopRowRel = -1;
         int bestScore = 0;
@@ -410,8 +412,8 @@ public class AutoFish extends Module {
         ByteBuffer topBuf = BufferUtils.createByteBuffer(scanW * arrowScanH * 4);
         ByteBuffer botBuf = BufferUtils.createByteBuffer(scanW * arrowScanH * 4);
 
-        GlStateManager.readPixels(scanX, topScanY, scanW, arrowScanH, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, topBuf);
-        GlStateManager.readPixels(scanX, botScanY, scanW, arrowScanH, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, botBuf);
+        GlStateManager._readPixels(scanX, topScanY, scanW, arrowScanH, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, MemoryUtil.memAddress(topBuf));
+        GlStateManager._readPixels(scanX, botScanY, scanW, arrowScanH, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, MemoryUtil.memAddress(botBuf));
 
         int threshold = whiteThreshold.get();
         int cursorTop = findCursorX(topBuf, scanW, arrowScanH, threshold);

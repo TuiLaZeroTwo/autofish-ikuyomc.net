@@ -14,7 +14,7 @@
   "environment": "client",
   "entrypoints": {
     "meteor": [
-      "tlz.autofish.addon.Autofish"
+      "tlz.autofish.addon.TLZAutoFish"
     ]
   },
   "mixins": [
