@@ -5,6 +5,9 @@ import meteordevelopment.meteorclient.events.render.Render2DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.utils.Utils;
+import meteordevelopment.meteorclient.utils.player.InvUtils;
+import meteordevelopment.meteorclient.utils.world.TickRate;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.item.Items;
 import net.minecraft.item.ItemStack;
@@ -23,16 +26,30 @@ public class AutoFish extends Module {
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
+    private final Setting<Boolean> autoSwitch = sgGeneral.add(new BoolSetting.Builder()
+        .name("auto-switch")
+        .description("Automatically switch to a fishing rod.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Boolean> antiBreak = sgGeneral.add(new BoolSetting.Builder()
+        .name("anti-break")
+        .description("Avoid using rods that would break if they were cast.")
+        .defaultValue(true)
+        .build()
+    );
+
     private final Setting<Boolean> autoCast = sgGeneral.add(new BoolSetting.Builder()
         .name("auto-cast")
-        .description("Automatically casts the fishing rod when not in use.")
+        .description("Automatically cast the fishing rod.")
         .defaultValue(true)
         .build()
     );
 
     private final Setting<Boolean> autoCatch = sgGeneral.add(new BoolSetting.Builder()
         .name("auto-catch")
-        .description("Automatically reels in when a fish bites and no minigame triggers.")
+        .description("Automatically reel in when a fish bites.")
         .defaultValue(true)
         .build()
     );
@@ -46,18 +63,36 @@ public class AutoFish extends Module {
 
     private final Setting<Integer> castDelay = sgGeneral.add(new IntSetting.Builder()
         .name("cast-delay")
-        .description("Ticks to wait after casting before checking for bobber.")
+        .description("How long to wait between recasts if the bobber fails to land in water.")
+        .defaultValue(14)
+        .min(1)
+        .sliderMax(60)
+        .build()
+    );
+
+    private final Setting<Integer> castDelayVariance = sgGeneral.add(new IntSetting.Builder()
+        .name("cast-delay-variance")
+        .description("Maximum amount of randomness added to cast delay.")
+        .defaultValue(0)
+        .min(0)
+        .sliderMax(30)
+        .build()
+    );
+
+    private final Setting<Integer> catchDelay = sgGeneral.add(new IntSetting.Builder()
+        .name("catch-delay")
+        .description("How long to wait after hooking a fish to reel it in.")
         .defaultValue(6)
-        .range(2, 40)
+        .min(1)
         .sliderMax(20)
         .build()
     );
 
-    private final Setting<Integer> biteWaitTicks = sgGeneral.add(new IntSetting.Builder()
-        .name("bite-wait-ticks")
-        .description("Ticks to wait after a bite before reeling or scanning for minigame bar.")
-        .defaultValue(4)
-        .range(1, 20)
+    private final Setting<Integer> catchDelayVariance = sgGeneral.add(new IntSetting.Builder()
+        .name("catch-delay-variance")
+        .description("Maximum amount of randomness added to catch delay.")
+        .defaultValue(0)
+        .min(0)
         .sliderMax(10)
         .build()
     );
@@ -149,6 +184,9 @@ public class AutoFish extends Module {
     private int greenStartFb, greenEndFb;
     private int cursorFbX;
     private int recheckDelay;
+    private double castDelayLeft;
+    private double catchDelayLeft;
+    private boolean wasHooked;
 
     public AutoFish() {
         super(TLZAutoFish.CATEGORY, "auto-fisch", "Auto fish with Stardew-style minigame support for IkuyoMC.");
@@ -182,6 +220,9 @@ public class AutoFish extends Module {
         greenStartFb = greenEndFb = -1;
         cursorFbX = -1;
         recheckDelay = 0;
+        castDelayLeft = 0.0;
+        catchDelayLeft = 0.0;
+        wasHooked = false;
     }
 
     private void log(String msg) {
@@ -191,6 +232,13 @@ public class AutoFish extends Module {
     @EventHandler
     private void onTick(TickEvent.Pre event) {
         if (mc.player == null || mc.world == null) return;
+
+        if (autoSwitch.get()) {
+            int bestRodSlot = findBestRod();
+            if (bestRodSlot != -1 && mc.player.getInventory().getSelectedSlot() != bestRodSlot) {
+                InvUtils.swap(bestRodSlot, false);
+            }
+        }
 
         if (!isHoldingRod()) {
             if (state != State.IDLE) reset();
@@ -202,13 +250,21 @@ public class AutoFish extends Module {
             return;
         }
 
-        switch (state) {
-            case IDLE -> tickIdle();
-            case CASTING -> tickCasting();
-            case WAITING -> tickWaiting();
-            case BITE -> tickBite();
-            case MINIGAME -> tickMinigame();
-            case REELING -> tickReeling();
+        if (state == State.MINIGAME) {
+            tickMinigame();
+            return;
+        }
+
+        if (state == State.REELING) {
+            tickReeling();
+            return;
+        }
+
+        tryCast();
+        tryCatch();
+
+        if (state == State.BITE) {
+            tickBite();
         }
     }
 
@@ -234,41 +290,104 @@ public class AutoFish extends Module {
         return main.getItem() == Items.FISHING_ROD || off.getItem() == Items.FISHING_ROD;
     }
 
-    private void tickIdle() {
-        if (!autoCast.get()) return;
+    private void tryCast() {
         if (mc.player.fishHook != null) return;
-        log("Casting rod");
-        rightClick();
-        state = State.CASTING;
-        timer = 0;
-    }
+        if (!autoCast.get()) return;
 
-    private void tickCasting() {
-        timer++;
-        if (timer > castDelay.get()) {
-            if (mc.player.fishHook != null) {
-                log("Bobber detected, waiting for bite");
-                state = State.WAITING;
-            } else {
-                log("No bobber after cast, back to IDLE");
-                state = State.IDLE;
-            }
-            timer = 0;
-        }
-    }
+        state = State.IDLE;
 
-    private void tickWaiting() {
-        if (mc.player.fishHook == null) {
-            log("Bobber lost, back to IDLE");
-            state = State.IDLE;
+        if (castDelayLeft > 0) {
+            castDelayLeft -= TickRate.INSTANCE.getTickRate() / 20.0;
             return;
         }
-        if (hasCaughtFish()) {
-            log("Fish bite detected!");
+
+        log("Casting rod");
+        useRod();
+    }
+
+    private void tryCatch() {
+        if (mc.player.fishHook == null) return;
+        state = State.WAITING;
+
+        if (mc.player.fishHook.getHookedEntity() != null) {
+            log("Entity hooked, reeling");
+            useRod();
+            return;
+        }
+
+        if (mc.player.fishHook.state != FishingBobberEntity.State.BOBBING) return;
+
+        if (!wasHooked) {
+            if (hasCaughtFish()) {
+                log("Fish bite detected!");
+                catchDelayLeft = randomizeDelay(catchDelay.get(), catchDelayVariance.get());
+                wasHooked = true;
+            }
+            return;
+        }
+
+        if (catchDelayLeft > 0) {
+            catchDelayLeft -= TickRate.INSTANCE.getTickRate() / 20.0;
+            return;
+        }
+
+        if (autoMinigame.get()) {
+            log("Delay expired, scanning for minigame bar");
             state = State.BITE;
             timer = 0;
             barFound = false;
+        } else if (autoCatch.get()) {
+            log("Catch delay done, reeling");
+            useRod();
+        } else {
+            state = State.IDLE;
         }
+    }
+
+    private void tickBite() {
+        timer++;
+        if (timer < 10) return;
+
+        if (barFound) {
+            log("Bar found, entering minigame");
+            state = State.MINIGAME;
+            timer = 0;
+            return;
+        }
+
+        if (timer > 40) {
+            log("Bar scan timeout, reeling");
+            useRod();
+        }
+    }
+
+    private void tickMinigame() {
+        timer++;
+        if (timer > minigameTimeout.get() * 20) {
+            log("Minigame timeout, reeling");
+            useRod();
+        }
+        if (mc.player.fishHook == null) {
+            state = State.IDLE;
+        }
+    }
+
+    private void tickReeling() {
+        if (mc.player.fishHook == null) {
+            state = State.IDLE;
+            timer = 0;
+        }
+    }
+
+    private void useRod() {
+        rightClick();
+        wasHooked = false;
+        catchDelayLeft = 0.0;
+        castDelayLeft = randomizeDelay(castDelay.get(), castDelayVariance.get());
+        state = State.REELING;
+        timer = 0;
+        barFound = false;
+        recheckDelay = 5;
     }
 
     private boolean hasCaughtFish() {
@@ -283,54 +402,25 @@ public class AutoFish extends Module {
         }
     }
 
-    private void tickBite() {
-        timer++;
-        log("Bite tick " + timer + " barFound=" + barFound + " autoMinigame=" + autoMinigame.get());
-        if (timer < biteWaitTicks.get()) return;
-
-        if (autoMinigame.get() && barFound) {
-            log("Bar found, entering minigame");
-            state = State.MINIGAME;
-            timer = 0;
-            return;
+    private int findBestRod() {
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = mc.player.getInventory().getItem(i);
+            if (stack.getItem() != Items.FISHING_ROD) continue;
+            if (antiBreak.get() && stack.getDamage() == stack.getMaxDamage() - 1) continue;
+            return i;
         }
-
-        if (autoMinigame.get() && timer > biteWaitTicks.get() + 6) {
-            log("Minigame timeout, reeling");
-            doReel();
-            return;
-        }
-
-        if (!autoMinigame.get() && autoCatch.get()) {
-            log("Auto-catching (no minigame)");
-            doReel();
-        }
+        return -1;
     }
 
-    private void tickMinigame() {
-        timer++;
-        if (timer > minigameTimeout.get() * 20) {
-            doReel();
-        }
-        if (mc.player.fishHook == null) {
-            state = State.IDLE;
-        }
-    }
-
-    private void tickReeling() {
-        if (mc.player.fishHook == null) {
-            state = State.IDLE;
-            timer = 0;
-        }
-    }
-
-    private void doReel() {
-        log("Reeling in");
-        rightClick();
-        state = State.REELING;
-        timer = 0;
-        barFound = false;
-        recheckDelay = 5;
+    private double randomizeDelay(int delay, int variance) {
+        if (variance == 0) return delay;
+        double scale = Math.sqrt(-2 * Math.log(Utils.random(0.0001, 1.0)));
+        double angle = 2 * Math.PI * Utils.random(0.0, 1.0);
+        double norm = scale * Math.cos(angle);
+        final double MAX_SD = 3.0;
+        norm = Math.clamp(norm, -MAX_SD, MAX_SD) / MAX_SD;
+        delay += Math.round(norm * variance);
+        return Math.max(1, delay);
     }
 
     private void detectBar() {
