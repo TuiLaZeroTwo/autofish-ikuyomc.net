@@ -143,15 +143,6 @@ public class AutoFish extends Module {
         .build()
     );
 
-    private final Setting<Integer> barColorMinPixels = sgGeneral.add(new IntSetting.Builder()
-        .name("bar-color-min")
-        .description("Minimum colored pixels in a row to confirm bar presence.")
-        .defaultValue(5)
-        .range(5, 200)
-        .sliderMax(100)
-        .build()
-    );
-
     private final Setting<Boolean> debug = sgGeneral.add(new BoolSetting.Builder()
         .name("debug")
         .description("Prints state changes and detection info to chat.")
@@ -563,8 +554,4 @@ public class AutoFish extends Module {
         return -1;
     }
 
-    private boolean isBarPixel(int r, int g, int b) {
-        Color.RGBtoHSB(r, g, b, hsbBuf);
-        return hsbBuf[1] > 0.25f && hsbBuf[2] > 0.15f;
-    }
 }
