@@ -79,7 +79,7 @@ public class AutoFish extends Module {
     private final Setting<Integer> catchDelay = sgGeneral.add(new IntSetting.Builder()
         .name("catch-delay")
         .description("How long to wait after hooking a fish to reel it in.")
-        .defaultValue(6)
+        .defaultValue(1)
         .min(1)
         .sliderMax(20)
         .build()
@@ -106,7 +106,7 @@ public class AutoFish extends Module {
     private final Setting<Integer> clickTolerance = sgGeneral.add(new IntSetting.Builder()
         .name("click-tolerance")
         .description("How many pixels inside the green zone the cursor must be before clicking.")
-        .defaultValue(5)
+        .defaultValue(0)
         .range(0, 30)
         .sliderMax(20)
         .build()
@@ -115,7 +115,7 @@ public class AutoFish extends Module {
     private final Setting<Integer> scanFrequency = sgGeneral.add(new IntSetting.Builder()
         .name("scan-frequency")
         .description("Screen scans happen every N ticks (higher = less CPU).")
-        .defaultValue(2)
+        .defaultValue(1)
         .range(1, 20)
         .sliderMax(20)
         .build()
@@ -142,8 +142,8 @@ public class AutoFish extends Module {
     private final Setting<Integer> greenThreshold = sgGeneral.add(new IntSetting.Builder()
         .name("green-threshold")
         .description("Minimum G-R difference to classify a pixel as green.")
-        .defaultValue(35)
-        .range(10, 100)
+        .defaultValue(10)
+        .range(5, 100)
         .sliderMax(80)
         .build()
     );
@@ -151,8 +151,8 @@ public class AutoFish extends Module {
     private final Setting<Integer> whiteThreshold = sgGeneral.add(new IntSetting.Builder()
         .name("white-threshold")
         .description("Minimum brightness to classify a pixel as the white cursor arrow.")
-        .defaultValue(200)
-        .range(150, 255)
+        .defaultValue(180)
+        .range(100, 255)
         .sliderMax(255)
         .build()
     );
@@ -160,7 +160,7 @@ public class AutoFish extends Module {
     private final Setting<Integer> barColorMinPixels = sgGeneral.add(new IntSetting.Builder()
         .name("bar-color-min")
         .description("Minimum colored pixels in a row to confirm bar presence.")
-        .defaultValue(30)
+        .defaultValue(5)
         .range(5, 200)
         .sliderMax(100)
         .build()
@@ -566,10 +566,10 @@ public class AutoFish extends Module {
     }
 
     private boolean isBarPixel(int r, int g, int b) {
-        int thr = 35;
+        int thr = 15;
         if (r > g + thr && r > b + thr) return true;
         if (g > r + thr && g > b + thr) return true;
-        if (r > 170 && g > 130 && b < 110) return true;
+        if (r > 150 && g > 100 && b < 120) return true;
         return false;
     }
 }
