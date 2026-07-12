@@ -1,24 +1,24 @@
 {
   "schemaVersion": 1,
-  "id": "addon-template",
+  "id": "tlz-autofish",
   "version": "${version}",
-  "name": "Addon Template",
-  "description": "An addon template for Meteor Client addons.",
+  "name": "TLZ AutoFish",
+  "description": "AutoFish addon with Stardew-style fishing minigame support for IkuyoMC.",
   "authors": [
-    "seasnail"
+    "tlz"
   ],
   "contact": {
-    "sources": "https://github.com/MeteorDevelopment/meteor-addon-template"
+    "sources": "https://github.com/TuiLaZeroTwo/autofish-ikuyomc.net"
   },
   "icon": "assets/template/icon.png",
   "environment": "client",
   "entrypoints": {
     "meteor": [
-      "com.example.addon.AddonTemplate"
+      "tlz.autofish.addon.Autofish"
     ]
   },
   "mixins": [
-    "addon-template.mixins.json"
+    "tlz-autofish.mixins.json"
   ],
   "custom": {
     "meteor-client:color": "225,25,25",
