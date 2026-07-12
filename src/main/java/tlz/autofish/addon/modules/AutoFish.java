@@ -19,6 +19,7 @@ import java.nio.ByteBuffer;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import org.lwjgl.BufferUtils;
+import java.awt.Color;
 import static meteordevelopment.meteorclient.utils.Utils.rightClick;
 
 public class AutoFish extends Module {
@@ -124,20 +125,20 @@ public class AutoFish extends Module {
         .build()
     );
 
-    private final Setting<Integer> greenThreshold = sgGeneral.add(new IntSetting.Builder()
-        .name("green-threshold")
-        .description("Minimum G-R difference to classify a pixel as green.")
-        .defaultValue(10)
-        .range(5, 100)
-        .sliderMax(80)
+    private final Setting<Integer> greenHueTolerance = sgGeneral.add(new IntSetting.Builder()
+        .name("green-hue-tolerance")
+        .description("Hue tolerance in degrees (± from 120°) to detect green.")
+        .defaultValue(30)
+        .range(5, 90)
+        .sliderMax(90)
         .build()
     );
 
-    private final Setting<Integer> whiteThreshold = sgGeneral.add(new IntSetting.Builder()
-        .name("white-threshold")
-        .description("Minimum brightness to classify a pixel as the white cursor arrow.")
-        .defaultValue(180)
-        .range(100, 255)
+    private final Setting<Integer> whiteBrightnessMin = sgGeneral.add(new IntSetting.Builder()
+        .name("white-brightness-min")
+        .description("Minimum HSB brightness (0-255) for cursor detection.")
+        .defaultValue(160)
+        .range(50, 255)
         .sliderMax(255)
         .build()
     );
@@ -169,6 +170,7 @@ public class AutoFish extends Module {
     private boolean inMinigame;
     private int minigameTimer;
     private int waitingTicks;
+    private final float[] hsbBuf = new float[3];
 
     public AutoFish() {
         super(TLZAutoFish.CATEGORY, "auto-fisch", "The ultimate addon for fishing on IkuyoMC.net.");
@@ -457,7 +459,7 @@ public class AutoFish extends Module {
 
         int gStart = -1, gEnd = -1;
         boolean inGreen = false;
-        int threshold = greenThreshold.get();
+        int hueTol = greenHueTolerance.get();
 
         for (int col = 0; col < readW; col++) {
             int idx = (midRow * readW + col) * 4;
@@ -465,7 +467,10 @@ public class AutoFish extends Module {
             int g = buf.get(idx + 1) & 0xFF;
             int b = buf.get(idx + 2) & 0xFF;
 
-            boolean isGreen = (g > r + threshold && g > b + threshold);
+            Color.RGBtoHSB(r, g, b, hsbBuf);
+            float hueDeg = hsbBuf[0] * 360;
+            boolean isGreen = hsbBuf[1] > 0.2f && hsbBuf[2] > 0.2f
+                && Math.abs(hueDeg - 129) < hueTol;
 
             if (isGreen && !inGreen) {
                 gStart = readX + col;
@@ -514,9 +519,9 @@ public class AutoFish extends Module {
         GlStateManager._readPixels(scanX, topScanY, scanW, arrowScanH, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, MemoryUtil.memAddress(topBuf));
         GlStateManager._readPixels(scanX, botScanY, scanW, arrowScanH, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, MemoryUtil.memAddress(botBuf));
 
-        int threshold = whiteThreshold.get();
-        int cursorTop = findCursorX(topBuf, scanW, arrowScanH, threshold);
-        int cursorBot = findCursorX(botBuf, scanW, arrowScanH, threshold);
+        int brightnessMin = whiteBrightnessMin.get();
+        int cursorTop = findCursorX(topBuf, scanW, arrowScanH, brightnessMin);
+        int cursorBot = findCursorX(botBuf, scanW, arrowScanH, brightnessMin);
 
         int newCursorX = -1;
         if (cursorTop >= 0) newCursorX = scanX + cursorTop;
@@ -536,7 +541,8 @@ public class AutoFish extends Module {
         }
     }
 
-    private int findCursorX(ByteBuffer buf, int w, int h, int threshold) {
+    private int findCursorX(ByteBuffer buf, int w, int h, int brightnessMin) {
+        float bNorm = brightnessMin / 255.0f;
         for (int col = 0; col < w; col++) {
             int whiteCount = 0;
             for (int row = 0; row < h; row++) {
@@ -544,7 +550,8 @@ public class AutoFish extends Module {
                 int r = buf.get(idx) & 0xFF;
                 int g = buf.get(idx + 1) & 0xFF;
                 int b = buf.get(idx + 2) & 0xFF;
-                if (r > threshold && g > threshold && b > threshold) whiteCount++;
+                Color.RGBtoHSB(r, g, b, hsbBuf);
+                if (hsbBuf[1] < 0.2f && hsbBuf[2] > bNorm) whiteCount++;
             }
             if (whiteCount >= 2) {
                 int startCol = col;
@@ -555,7 +562,8 @@ public class AutoFish extends Module {
                         int rv = buf.get(i) & 0xFF;
                         int gv = buf.get(i + 1) & 0xFF;
                         int bv = buf.get(i + 2) & 0xFF;
-                        if (rv > threshold && gv > threshold && bv > threshold) cnt++;
+                        Color.RGBtoHSB(rv, gv, bv, hsbBuf);
+                        if (hsbBuf[1] < 0.2f && hsbBuf[2] > bNorm) cnt++;
                     }
                     if (cnt >= 1) startCol--;
                     else break;
@@ -567,10 +575,7 @@ public class AutoFish extends Module {
     }
 
     private boolean isBarPixel(int r, int g, int b) {
-        int thr = 15;
-        if (r > g + thr && r > b + thr) return true;
-        if (g > r + thr && g > b + thr) return true;
-        if (r > 150 && g > 100 && b < 120) return true;
-        return false;
+        Color.RGBtoHSB(r, g, b, hsbBuf);
+        return hsbBuf[1] > 0.25f && hsbBuf[2] > 0.15f;
     }
 }
