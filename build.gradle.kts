@@ -19,14 +19,19 @@ repositories {
     }
 }
 
+loom {
+    layeredMappings {
+        mappings("net.fabricmc:yarn:${libs.versions.yarn.mappings.get()}:v2")
+    }
+}
+
 dependencies {
     // Fabric
     minecraft(libs.minecraft)
-    mappings(variantOf(libs.yarn) { classifier("v2") })
-    modImplementation(libs.fabric.loader)
+    implementation(libs.fabric.loader)
 
     // Meteor
-    modImplementation(libs.meteor.client)
+    implementation(libs.meteor.client)
 }
 
 java {
