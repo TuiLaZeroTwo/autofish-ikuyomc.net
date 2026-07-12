@@ -1,7 +1,6 @@
-name: Nightly Build
+name: Build
 on:
-  schedule:
-    - cron: '0 0 * * *'
+  push:
   workflow_dispatch:
 
 jobs:
@@ -25,28 +24,3 @@ jobs:
 
       - name: Build with Gradle
         run: ./gradlew build
-
-      - name: Generate tag
-        id: tag
-        run: echo "tag=nightly-$(date -u +'%Y%m%d')" >> $GITHUB_OUTPUT
-
-      - name: Delete old nightly releases
-        uses: dev-drprasad/delete-older-releases@v0.3.4
-        with:
-          repo: ${{ github.repository }}
-          tag_prefix: nightly
-          keep_latest: 3
-          delete_tags: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Release
-        uses: softprops/action-gh-release@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: Nightly Build ${{ steps.tag.outputs.tag }}
-          prerelease: true
-          fail_on_unmatched_files: true
-          files: |
-            ./build/libs/*.jar
