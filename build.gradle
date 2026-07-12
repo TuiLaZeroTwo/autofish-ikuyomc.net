@@ -24,7 +24,7 @@ repositories {
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings loom.officialMojangMappings()
+    mappings "net.fabricmc:yarn:${project.yarn_version}:v2"
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "meteordevelopment:meteor-client:${project.minecraft_version}-SNAPSHOT"
 }
