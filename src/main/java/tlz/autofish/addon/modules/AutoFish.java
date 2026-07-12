@@ -134,6 +134,13 @@ public class AutoFish extends Module {
         .build()
     );
 
+    private final Setting<Boolean> debug = sgGeneral.add(new BoolSetting.Builder()
+        .name("debug")
+        .description("Prints state changes and detection info to chat.")
+        .defaultValue(false)
+        .build()
+    );
+
     private State state = State.IDLE;
     private int timer;
     private int scanCounter;
@@ -175,6 +182,10 @@ public class AutoFish extends Module {
         greenStartFb = greenEndFb = -1;
         cursorFbX = -1;
         recheckDelay = 0;
+    }
+
+    private void log(String msg) {
+        if (debug.get()) info(msg);
     }
 
     @EventHandler
@@ -226,6 +237,7 @@ public class AutoFish extends Module {
     private void tickIdle() {
         if (!autoCast.get()) return;
         if (mc.player.fishHook != null) return;
+        log("Casting rod");
         rightClick();
         state = State.CASTING;
         timer = 0;
@@ -235,8 +247,10 @@ public class AutoFish extends Module {
         timer++;
         if (timer > castDelay.get()) {
             if (mc.player.fishHook != null) {
+                log("Bobber detected, waiting for bite");
                 state = State.WAITING;
             } else {
+                log("No bobber after cast, back to IDLE");
                 state = State.IDLE;
             }
             timer = 0;
@@ -245,10 +259,12 @@ public class AutoFish extends Module {
 
     private void tickWaiting() {
         if (mc.player.fishHook == null) {
+            log("Bobber lost, back to IDLE");
             state = State.IDLE;
             return;
         }
         if (hasCaughtFish()) {
+            log("Fish bite detected!");
             state = State.BITE;
             timer = 0;
             barFound = false;
@@ -262,26 +278,31 @@ public class AutoFish extends Module {
             f.setAccessible(true);
             return f.getBoolean(mc.player.fishHook);
         } catch (Exception e) {
+            if (debug.get()) info("hasCaughtFish reflection failed: " + e.getMessage());
             return false;
         }
     }
 
     private void tickBite() {
         timer++;
+        log("Bite tick " + timer + " barFound=" + barFound + " autoMinigame=" + autoMinigame.get());
         if (timer < biteWaitTicks.get()) return;
 
         if (autoMinigame.get() && barFound) {
+            log("Bar found, entering minigame");
             state = State.MINIGAME;
             timer = 0;
             return;
         }
 
         if (autoMinigame.get() && timer > biteWaitTicks.get() + 6) {
+            log("Minigame timeout, reeling");
             doReel();
             return;
         }
 
         if (!autoMinigame.get() && autoCatch.get()) {
+            log("Auto-catching (no minigame)");
             doReel();
         }
     }
@@ -304,6 +325,7 @@ public class AutoFish extends Module {
     }
 
     private void doReel() {
+        log("Reeling in");
         rightClick();
         state = State.REELING;
         timer = 0;
@@ -357,7 +379,10 @@ public class AutoFish extends Module {
             }
         }
 
-        if (bestScore < barColorMinPixels.get()) return;
+        if (bestScore < barColorMinPixels.get()) {
+            log("Bar scan: bestScore=" + bestScore + " < min=" + barColorMinPixels.get() + " — no bar found");
+            return;
+        }
 
         int barRelY = barTopRowRel;
         int barHeightFound = bfbH;
@@ -399,6 +424,9 @@ public class AutoFish extends Module {
             greenStartFb = gStart;
             greenEndFb = gEnd;
             barFound = true;
+            log("Bar found! bestScore=" + bestScore + " greenZone=[" + greenStartFb + "," + greenEndFb + "] fbPos=[" + barFbX + "," + barFbY + " " + barFbW + "x" + barFbH + "]");
+        } else {
+            log("Bar scan: bestScore=" + bestScore + " but no green zone (gStart=" + gStart + " gEnd=" + gEnd + ")");
         }
     }
 
@@ -434,11 +462,16 @@ public class AutoFish extends Module {
         if (cursorTop >= 0) newCursorX = scanX + cursorTop;
         else if (cursorBot >= 0) newCursorX = scanX + cursorBot;
 
-        if (newCursorX < 0) return;
+        if (newCursorX < 0) {
+            log("Cursor scan: no white arrow found above or below bar");
+            return;
+        }
         cursorFbX = newCursorX;
 
         int tol = clickTolerance.get();
+        log("Cursor at fbX=" + cursorFbX + " greenZone=[" + greenStartFb + "," + greenEndFb + "] tol=" + tol + " inZone=" + (cursorFbX >= greenStartFb + tol && cursorFbX <= greenEndFb - tol));
         if (cursorFbX >= greenStartFb + tol && cursorFbX <= greenEndFb - tol) {
+            log("Cursor in green zone, clicking!");
             rightClick();
             state = State.REELING;
             timer = 0;
