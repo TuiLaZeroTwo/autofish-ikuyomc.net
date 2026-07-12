@@ -392,7 +392,7 @@ public class AutoFish extends Module {
 
     private boolean isStateBobbing() {
         try {
-            Field f = FishingBobberEntity.class.getDeclaredField("state");
+            Field f = FishingBobberEntity.class.getDeclaredField("field_7175");
             f.setAccessible(true);
             Object val = f.get(mc.player.fishHook);
             return val instanceof Enum<?> e && e.ordinal() == 1;
@@ -404,7 +404,7 @@ public class AutoFish extends Module {
     private boolean hasCaughtFish() {
         if (mc.player.fishHook == null) return false;
         try {
-            Field f = FishingBobberEntity.class.getDeclaredField("caughtFish");
+            Field f = FishingBobberEntity.class.getDeclaredField("field_23232");
             f.setAccessible(true);
             return f.getBoolean(mc.player.fishHook);
         } catch (Exception e) {
