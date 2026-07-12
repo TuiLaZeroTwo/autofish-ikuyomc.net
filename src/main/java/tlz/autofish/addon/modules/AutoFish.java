@@ -315,7 +315,7 @@ public class AutoFish extends Module {
             return;
         }
 
-        if (mc.player.fishHook.state != FishingBobberEntity.State.BOBBING) return;
+        if (!isStateBobbing()) return;
 
         if (!wasHooked) {
             if (hasCaughtFish()) {
@@ -390,6 +390,17 @@ public class AutoFish extends Module {
         recheckDelay = 5;
     }
 
+    private boolean isStateBobbing() {
+        try {
+            Field f = FishingBobberEntity.class.getDeclaredField("state");
+            f.setAccessible(true);
+            Object val = f.get(mc.player.fishHook);
+            return val instanceof Enum<?> e && e.ordinal() == 1;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
     private boolean hasCaughtFish() {
         if (mc.player.fishHook == null) return false;
         try {
@@ -404,7 +415,7 @@ public class AutoFish extends Module {
 
     private int findBestRod() {
         for (int i = 0; i < 9; i++) {
-            ItemStack stack = mc.player.getInventory().getItem(i);
+            ItemStack stack = mc.player.getInventory().getStack(i);
             if (stack.getItem() != Items.FISHING_ROD) continue;
             if (antiBreak.get() && stack.getDamage() == stack.getMaxDamage() - 1) continue;
             return i;
