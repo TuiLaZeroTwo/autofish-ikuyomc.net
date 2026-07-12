@@ -460,17 +460,25 @@ public class AutoFish extends Module {
         int gStart = -1, gEnd = -1;
         boolean inGreen = false;
         int hueTol = greenHueTolerance.get();
+        int scanTop = Math.max(0, midRow - 1);
+        int scanBot = Math.min(readH - 1, midRow + 1);
+        int scanRows = scanBot - scanTop + 1;
 
         for (int col = 0; col < readW; col++) {
-            int idx = (midRow * readW + col) * 4;
-            int r = buf.get(idx) & 0xFF;
-            int g = buf.get(idx + 1) & 0xFF;
-            int b = buf.get(idx + 2) & 0xFF;
-
-            Color.RGBtoHSB(r, g, b, hsbBuf);
-            float hueDeg = hsbBuf[0] * 360;
-            boolean isGreen = hsbBuf[1] > 0.2f && hsbBuf[2] > 0.2f
-                && Math.abs(hueDeg - 129) < hueTol;
+            int greenCount = 0;
+            for (int r = scanTop; r <= scanBot; r++) {
+                int idx = (r * readW + col) * 4;
+                int rv = buf.get(idx) & 0xFF;
+                int gv = buf.get(idx + 1) & 0xFF;
+                int bv = buf.get(idx + 2) & 0xFF;
+                Color.RGBtoHSB(rv, gv, bv, hsbBuf);
+                float hueDeg = hsbBuf[0] * 360;
+                if (hsbBuf[1] > 0.5f && hsbBuf[2] > 0.3f
+                    && Math.abs(hueDeg - 129) < hueTol) {
+                    greenCount++;
+                }
+            }
+            boolean isGreen = greenCount > scanRows / 2;
 
             if (isGreen && !inGreen) {
                 gStart = readX + col;
