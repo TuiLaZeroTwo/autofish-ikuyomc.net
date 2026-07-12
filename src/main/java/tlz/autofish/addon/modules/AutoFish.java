@@ -410,9 +410,9 @@ public class AutoFish extends Module {
 
         int margin = 10;
         int readW = Math.min(bfbW + margin * 2, fbW);
-        int readH = Math.min(bfbH + margin * 2, fbH);
+        int readH = Math.min(bfbH + margin * 2, fbH) / 2;
         int readX = Math.max(0, bfbX - margin);
-        int readY = Math.max(0, bfbY - margin);
+        int readY = Math.max(0, (fbH - readH) / 2);
         readW = Math.min(readW, fbW - readX);
         readH = Math.min(readH, fbH - readY);
 
