@@ -303,11 +303,11 @@ public class AutoFish extends Module {
             return;
         }
 
-        if (!isStateBobbing()) return;
-
         waitingTicks++;
 
         if (!wasHooked) {
+            if (!isStateBobbing()) return;
+
             if (hasCaughtFish()) {
                 log("Fish bite detected!");
                 catchDelayLeft = randomizeDelay(catchDelay.get(), catchDelayVariance.get());
@@ -319,6 +319,22 @@ public class AutoFish extends Module {
             }
             return;
         }
+
+        if (catchDelayLeft > 0) {
+            catchDelayLeft -= TickRate.INSTANCE.getTickRate() / 20.0;
+            return;
+        }
+
+        if (autoMinigame.get()) {
+            log("Catch delay done, scanning for minigame bar");
+            inMinigame = true;
+            minigameTimer = 0;
+            barFound = false;
+        } else {
+            log("Catch delay done, reeling");
+            useRod();
+        }
+    }
 
         if (catchDelayLeft > 0) {
             catchDelayLeft -= TickRate.INSTANCE.getTickRate() / 20.0;
@@ -369,7 +385,7 @@ public class AutoFish extends Module {
             Object val = f.get(mc.player.fishHook);
             int ord = ((Enum<?>) val).ordinal();
             if (debug.get()) info("Bobber state ordinal=" + ord);
-            return ord == 1;
+            return ord != 0;
         } catch (Exception e) {
             if (debug.get()) info("isStateBobbing exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
             return true;
