@@ -1,7 +1,6 @@
 package tlz.autofish.addon.modules;
 
 import tlz.autofish.addon.TLZAutoFish;
-import meteordevelopment.meteorclient.events.render.Render2DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
@@ -115,8 +114,8 @@ public class AutoFish extends Module {
 
     private final Setting<Integer> scanFrequency = sgGeneral.add(new IntSetting.Builder()
         .name("scan-frequency")
-        .description("Screen scans happen every N frames (higher = less CPU).")
-        .defaultValue(3)
+        .description("Screen scans happen every N ticks (higher = less CPU).")
+        .defaultValue(2)
         .range(1, 10)
         .sliderMax(6)
         .build()
@@ -174,7 +173,6 @@ public class AutoFish extends Module {
         .build()
     );
 
-    private int scanCounter;
     private boolean barFound;
     private int barFbX, barFbY, barFbW, barFbH;
     private int greenStartFb, greenEndFb;
@@ -212,7 +210,6 @@ public class AutoFish extends Module {
     }
 
     private void reset() {
-        scanCounter = 0;
         barFound = false;
         greenStartFb = greenEndFb = -1;
         cursorFbX = -1;
@@ -259,18 +256,29 @@ public class AutoFish extends Module {
         tryCatch();
     }
 
-    @EventHandler
-    private void onRender2D(Render2DEvent event) {
-        if (!inMinigame) return;
-        if (!autoMinigame.get()) return;
+    private void tickMinigame() {
+        minigameTimer++;
 
-        scanCounter++;
-        if (scanCounter % scanFrequency.get() != 0) return;
+        if (mc.player.fishHook == null) {
+            log("Bobber lost during minigame");
+            inMinigame = false;
+            return;
+        }
 
-        if (!barFound) {
-            detectBar();
-        } else {
-            scanCursor();
+        if (minigameTimer > minigameTimeout.get() * 20) {
+            log("Minigame timeout");
+            useRod();
+            return;
+        }
+
+        if (minigameTimer % scanFrequency.get() != 0) return;
+
+        if (autoMinigame.get()) {
+            if (!barFound) {
+                detectBar();
+            } else {
+                scanCursor();
+            }
         }
     }
 
@@ -335,21 +343,6 @@ public class AutoFish extends Module {
             catchDelayLeft = 0.0;
         } else {
             log("Catch delay done, reeling");
-            useRod();
-        }
-    }
-
-    private void tickMinigame() {
-        minigameTimer++;
-
-        if (mc.player.fishHook == null) {
-            log("Bobber lost during minigame");
-            inMinigame = false;
-            return;
-        }
-
-        if (minigameTimer > minigameTimeout.get() * 20) {
-            log("Minigame timeout");
             useRod();
         }
     }
