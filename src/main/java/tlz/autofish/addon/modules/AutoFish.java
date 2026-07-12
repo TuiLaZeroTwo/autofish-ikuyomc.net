@@ -1,6 +1,7 @@
 package tlz.autofish.addon.modules;
 
 import tlz.autofish.addon.TLZAutoFish;
+import meteordevelopment.meteorclient.events.render.Render2DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
@@ -101,15 +102,6 @@ public class AutoFish extends Module {
         .description("How many pixels inside the green zone the cursor must be before clicking.")
         .defaultValue(0)
         .range(0, 30)
-        .sliderMax(20)
-        .build()
-    );
-
-    private final Setting<Integer> scanFrequency = sgGeneral.add(new IntSetting.Builder()
-        .name("scan-frequency")
-        .description("Screen scans happen every N ticks (higher = less CPU).")
-        .defaultValue(1)
-        .range(1, 20)
         .sliderMax(20)
         .build()
     );
@@ -249,6 +241,18 @@ public class AutoFish extends Module {
         tryCatch();
     }
 
+    @EventHandler
+    private void onRender2D(Render2DEvent event) {
+        if (!inMinigame) return;
+        if (!autoMinigame.get()) return;
+
+        if (!barFound) {
+            detectBar();
+        } else {
+            scanCursor();
+        }
+    }
+
     private void tickMinigame() {
         minigameTimer++;
 
@@ -261,17 +265,6 @@ public class AutoFish extends Module {
         if (minigameTimer > MINIGAME_TIMEOUT * 20) {
             log("Minigame timeout");
             useRod();
-            return;
-        }
-
-        if (minigameTimer % scanFrequency.get() != 0) return;
-
-        if (autoMinigame.get()) {
-            if (!barFound) {
-                detectBar();
-            } else {
-                scanCursor();
-            }
         }
     }
 
