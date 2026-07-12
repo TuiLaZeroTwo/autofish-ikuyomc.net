@@ -1,6 +1,6 @@
 plugins {
     id 'java'
-    id 'fabric-loom' version '1.13.3'
+    id 'fabric-loom' version '1.14.7'
 }
 
 java {
@@ -23,15 +23,11 @@ repositories {
     maven { url "https://libraries.minecraft.net/" }
 }
 
-loom {
-    accessWidenerPath = file("src/main/resources/tlz-autofish.accesswidener")
-}
-
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings loom.officialMojangMappings()
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    modImplementation "meteordevelopment:meteor-client:${project.minecraft_version}-SNAPSHOT"
+    modCompileOnly "meteordevelopment:meteor-client:${project.minecraft_version}-SNAPSHOT"
 }
 
 processResources {
