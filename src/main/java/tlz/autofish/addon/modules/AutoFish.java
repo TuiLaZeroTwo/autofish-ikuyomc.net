@@ -166,7 +166,7 @@ public class AutoFish extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (mc.player == null || mc.level == null) return;
+        if (mc.player == null || mc.world == null) return;
 
         if (!isHoldingRod()) {
             if (state != State.IDLE) reset();
@@ -324,7 +324,7 @@ public class AutoFish extends Module {
         if (readW <= 0 || readH <= 0) return;
 
         ByteBuffer buf = BufferUtils.createByteBuffer(readW * readH * 4);
-        GlStateManager._readPixels(readX, readY, readW, readH, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buf);
+        GlStateManager.readPixels(readX, readY, readW, readH, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buf);
 
         int barTopRowRel = -1;
         int bestScore = 0;
@@ -410,8 +410,8 @@ public class AutoFish extends Module {
         ByteBuffer topBuf = BufferUtils.createByteBuffer(scanW * arrowScanH * 4);
         ByteBuffer botBuf = BufferUtils.createByteBuffer(scanW * arrowScanH * 4);
 
-        GlStateManager._readPixels(scanX, topScanY, scanW, arrowScanH, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, topBuf);
-        GlStateManager._readPixels(scanX, botScanY, scanW, arrowScanH, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, botBuf);
+        GlStateManager.readPixels(scanX, topScanY, scanW, arrowScanH, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, topBuf);
+        GlStateManager.readPixels(scanX, botScanY, scanW, arrowScanH, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, botBuf);
 
         int threshold = whiteThreshold.get();
         int cursorTop = findCursorX(topBuf, scanW, arrowScanH, threshold);

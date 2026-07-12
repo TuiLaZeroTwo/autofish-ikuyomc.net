@@ -23,13 +23,9 @@ repositories {
     maven { url "https://libraries.minecraft.net/" }
 }
 
-loom {
-    accessWidenerPath = file("src/main/resources/tlz-autofish.accesswidener")
-}
-
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings loom.officialMojangMappings()
+    mappings "net.fabricmc:yarn:${project.minecraft_version}+build.6:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "meteordevelopment:meteor-client:${project.minecraft_version}-SNAPSHOT"
 }
