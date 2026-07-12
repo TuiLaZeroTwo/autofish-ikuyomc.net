@@ -22,8 +22,6 @@ import org.lwjgl.BufferUtils;
 import static meteordevelopment.meteorclient.utils.Utils.rightClick;
 
 public class AutoFish extends Module {
-    private enum State { IDLE, CASTING, WAITING, BITE, MINIGAME, REELING }
-
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
     private final Setting<Boolean> autoSwitch = sgGeneral.add(new BoolSetting.Builder()
@@ -176,8 +174,6 @@ public class AutoFish extends Module {
         .build()
     );
 
-    private State state = State.IDLE;
-    private int timer;
     private int scanCounter;
     private boolean barFound;
     private int barFbX, barFbY, barFbW, barFbH;
@@ -187,6 +183,8 @@ public class AutoFish extends Module {
     private double castDelayLeft;
     private double catchDelayLeft;
     private boolean wasHooked;
+    private boolean inMinigame;
+    private int minigameTimer;
 
     public AutoFish() {
         super(TLZAutoFish.CATEGORY, "auto-fisch", "Auto fish with Stardew-style minigame support for IkuyoMC.");
@@ -213,8 +211,6 @@ public class AutoFish extends Module {
     }
 
     private void reset() {
-        state = State.IDLE;
-        timer = 0;
         scanCounter = 0;
         barFound = false;
         greenStartFb = greenEndFb = -1;
@@ -223,6 +219,8 @@ public class AutoFish extends Module {
         castDelayLeft = 0.0;
         catchDelayLeft = 0.0;
         wasHooked = false;
+        inMinigame = false;
+        minigameTimer = 0;
     }
 
     private void log(String msg) {
@@ -241,7 +239,7 @@ public class AutoFish extends Module {
         }
 
         if (!isHoldingRod()) {
-            if (state != State.IDLE) reset();
+            if (wasHooked || inMinigame || castDelayLeft > 0 || catchDelayLeft > 0) reset();
             return;
         }
 
@@ -250,35 +248,26 @@ public class AutoFish extends Module {
             return;
         }
 
-        if (state == State.MINIGAME) {
+        if (inMinigame) {
             tickMinigame();
-            return;
-        }
-
-        if (state == State.REELING) {
-            tickReeling();
             return;
         }
 
         tryCast();
         tryCatch();
-
-        if (state == State.BITE) {
-            tickBite();
-        }
     }
 
     @EventHandler
     private void onRender2D(Render2DEvent event) {
-        if (state != State.MINIGAME && state != State.BITE) return;
+        if (!inMinigame) return;
         if (!autoMinigame.get()) return;
 
         scanCounter++;
         if (scanCounter % scanFrequency.get() != 0) return;
 
-        if (state == State.BITE) {
+        if (!barFound) {
             detectBar();
-        } else if (state == State.MINIGAME) {
+        } else {
             scanCursor();
         }
     }
@@ -294,8 +283,6 @@ public class AutoFish extends Module {
         if (mc.player.fishHook != null) return;
         if (!autoCast.get()) return;
 
-        state = State.IDLE;
-
         if (castDelayLeft > 0) {
             castDelayLeft -= TickRate.INSTANCE.getTickRate() / 20.0;
             return;
@@ -307,7 +294,6 @@ public class AutoFish extends Module {
 
     private void tryCatch() {
         if (mc.player.fishHook == null) return;
-        state = State.WAITING;
 
         if (mc.player.fishHook.getHookedEntity() != null) {
             log("Entity hooked, reeling");
@@ -332,60 +318,37 @@ public class AutoFish extends Module {
         }
 
         if (autoMinigame.get()) {
-            log("Delay expired, scanning for minigame bar");
-            state = State.BITE;
-            timer = 0;
+            log("Catch delay done, scanning for minigame bar");
+            inMinigame = true;
+            minigameTimer = 0;
             barFound = false;
-        } else if (autoCatch.get()) {
-            log("Catch delay done, reeling");
-            useRod();
         } else {
-            state = State.IDLE;
-        }
-    }
-
-    private void tickBite() {
-        timer++;
-        if (timer < 10) return;
-
-        if (barFound) {
-            log("Bar found, entering minigame");
-            state = State.MINIGAME;
-            timer = 0;
-            return;
-        }
-
-        if (timer > 40) {
-            log("Bar scan timeout, reeling");
+            log("Catch delay done, reeling");
             useRod();
         }
     }
 
     private void tickMinigame() {
-        timer++;
-        if (timer > minigameTimeout.get() * 20) {
-            log("Minigame timeout, reeling");
-            useRod();
-        }
-        if (mc.player.fishHook == null) {
-            state = State.IDLE;
-        }
-    }
+        minigameTimer++;
 
-    private void tickReeling() {
         if (mc.player.fishHook == null) {
-            state = State.IDLE;
-            timer = 0;
+            log("Bobber lost during minigame");
+            inMinigame = false;
+            return;
+        }
+
+        if (minigameTimer > minigameTimeout.get() * 20) {
+            log("Minigame timeout");
+            useRod();
         }
     }
 
     private void useRod() {
         rightClick();
         wasHooked = false;
+        inMinigame = false;
         catchDelayLeft = 0.0;
         castDelayLeft = randomizeDelay(castDelay.get(), castDelayVariance.get());
-        state = State.REELING;
-        timer = 0;
         barFound = false;
         recheckDelay = 5;
     }
@@ -573,11 +536,7 @@ public class AutoFish extends Module {
         log("Cursor at fbX=" + cursorFbX + " greenZone=[" + greenStartFb + "," + greenEndFb + "] tol=" + tol + " inZone=" + (cursorFbX >= greenStartFb + tol && cursorFbX <= greenEndFb - tol));
         if (cursorFbX >= greenStartFb + tol && cursorFbX <= greenEndFb - tol) {
             log("Cursor in green zone, clicking!");
-            rightClick();
-            state = State.REELING;
-            timer = 0;
-            barFound = false;
-            recheckDelay = 5;
+            useRod();
         }
     }
 
