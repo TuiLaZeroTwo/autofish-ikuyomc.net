@@ -1,9 +1,8 @@
 """
-IkuyoMC.net Stardew-style fishing bot
-Screen capture + OpenCV based external tool
+IkuyoMC.net Stardew-style fishing bot — minigame only
+Manual cast/reel, bot only clicks when cursor is in green zone
 """
 import time
-import random
 import logging
 from enum import Enum, auto
 from dataclasses import dataclass
@@ -13,12 +12,7 @@ from typing import Optional
 import cv2
 import numpy as np
 import mss
-import pyautogui
-import win32gui
-import win32api
-import win32con
 
-pyautogui.PAUSE = 0
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("fisher")
 
@@ -35,24 +29,14 @@ class Config:
     bar_height_pct: float = 0.055
     click_tolerance: int = 0
     minigame_timeout: float = 30.0
-    cast_delay_min: float = 0.5
-    cast_delay_max: float = 1.5
     scan_interval: float = 0.016
-    wait_min: float = 8.0
-    wait_max: float = 25.0
     hud: bool = False
-    background: bool = False
     debug: bool = False
 
 
 class State(Enum):
-    INIT = auto()
-    CASTING = auto()
-    WAITING_BOBBER = auto()
-    FISHING = auto()
-    BITE_CHECK = auto()
+    IDLE = auto()
     MINIGAME = auto()
-    REELING = auto()
     STOP = auto()
 
 
@@ -60,19 +44,19 @@ class Fisher:
     def __init__(self, cfg: Optional[Config] = None):
         self.cfg = cfg or Config()
         self.sct = mss.MSS()
-        self.state = State.INIT
+        self.state = State.IDLE
         self.monitor = self.sct.monitors[1]
         self.sw = self.monitor["width"]
         self.sh = self.monitor["height"]
-        self.state_start = 0.0
         self.bar_rect: Optional[dict] = None
         self.green_start: Optional[int] = None
         self.green_end: Optional[int] = None
         self.cursor_x: Optional[int] = None
-        self.wait_until = 0.0
+        self.timeout_until = 0.0
         self.log_buffer = deque(maxlen=10)
         self._hud_ready = False
         self._last_hud_time = 0.0
+        self._last_bar_msg = ""
 
     def _hud_log(self, msg):
         self.log_buffer.append(str(msg)[:80])
@@ -102,8 +86,7 @@ class Fisher:
         scan_l = (w - scan_w) // 2
         scan_t = (h - scan_h) // 2
         cv2.rectangle(img_bgr, (scan_l, scan_t),
-                     (scan_l + scan_w, scan_t + scan_h),
-                     (80, 80, 80), 1)
+                     (scan_l + scan_w, scan_t + scan_h), (80, 80, 80), 1)
 
         if self.bar_rect is not None:
             bl = self.bar_rect["left"] - rect["left"]
@@ -126,8 +109,7 @@ class Fisher:
         cv2.putText(img_bgr, f"State:{self.state.name} FPS:{fps:.0f}", (5, 12),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (200, 200, 200), 1)
 
-        log_h = 80
-        log_panel = np.zeros((log_h, w, 3), dtype=np.uint8)
+        log_panel = np.zeros((80, w, 3), dtype=np.uint8)
         for i, msg in enumerate(self.log_buffer):
             cv2.putText(log_panel, msg, (5, 13 + i * 13),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.3, (180, 180, 180), 1)
@@ -229,8 +211,10 @@ class Fisher:
         }
         self.green_start = best_gstart
         self.green_end = best_gend
-        if self.cfg.debug:
-            self._log(f"Bar found @ y={green_fb_y} green=[{best_gstart},{best_gend}]")
+        msg = f"Bar green=[{best_gstart},{best_gend}]"
+        if msg != self._last_bar_msg:
+            self._log(msg)
+            self._last_bar_msg = msg
         return True
 
     def find_cursor(self) -> Optional[int]:
@@ -246,12 +230,10 @@ class Fisher:
         if top_y + arrow_h > self.sh or bot_y + arrow_h > self.sh:
             return None
 
-        regions = [
+        for label, r in [
             ("top", {"left": scan_x, "top": top_y, "width": scan_w, "height": arrow_h}),
             ("bot", {"left": scan_x, "top": bot_y, "width": scan_w, "height": arrow_h}),
-        ]
-
-        for label, r in regions:
+        ]:
             img = self.capture(r)
             if img.size == 0:
                 continue
@@ -272,82 +254,47 @@ class Fisher:
                         else:
                             break
                     cx = scan_x + start_col
-                    if self.cfg.debug:
-                        loc = "above" if label == "top" else "below"
-                        in_zone = self.green_start is not None and self.green_end is not None and \
-                            self.green_start + self.cfg.click_tolerance <= cx <= self.green_end - self.cfg.click_tolerance
-                        self._log(f"Cursor {loc} bar at x={cx} green=[{self.green_start},{self.green_end}] inZone={in_zone}")
                     return cx
         return None
 
-    def _find_minecraft_hwnd(self):
-        def enum_callback(hwnd, windows):
-            if win32gui.IsWindowVisible(hwnd):
-                title = win32gui.GetWindowText(hwnd)
-                if 'Minecraft' in title:
-                    windows.append(hwnd)
-        windows = []
-        win32gui.EnumWindows(enum_callback, windows)
-        return windows[0] if windows else None
-
     def right_click(self):
-        if self.cfg.background:
-            mc = self._find_minecraft_hwnd()
-            if mc:
+        try:
+            import win32gui, win32api, win32con
+            def enum_cb(hwnd, windows):
+                if win32gui.IsWindowVisible(hwnd) and 'Minecraft' in win32gui.GetWindowText(hwnd):
+                    windows.append(hwnd)
+            windows = []
+            win32gui.EnumWindows(enum_cb, windows)
+            if windows:
                 lparam = win32api.MAKELONG(0, 0)
-                win32api.SendMessage(mc, win32con.WM_RBUTTONDOWN, win32con.MK_RBUTTON, lparam)
-                win32api.SendMessage(mc, win32con.WM_RBUTTONUP, 0, lparam)
+                win32api.SendMessage(windows[0], win32con.WM_RBUTTONDOWN, win32con.MK_RBUTTON, lparam)
+                win32api.SendMessage(windows[0], win32con.WM_RBUTTONUP, 0, lparam)
                 return
+        except ImportError:
+            pass
+        import pyautogui
+        pyautogui.FAILSAFE = False
         pyautogui.click(button="right")
-
-    def cast(self):
-        if self.cfg.debug:
-            self._log("Casting rod")
-        self.right_click()
-
-    def reel(self):
-        if self.cfg.debug:
-            self._log("Reeling")
-        self.right_click()
 
     def _log(self, msg):
         log.info(msg)
         if self.cfg.hud:
             self._hud_log(msg)
 
-    def set_state(self, state: State):
-        self.state = state
-        self.state_start = time.time()
-
-    def _focus_minecraft(self):
-        mc = self._find_minecraft_hwnd()
-        if mc:
-            win32gui.ShowWindow(mc, win32con.SW_RESTORE)
-            win32gui.SetForegroundWindow(mc)
-            time.sleep(0.5)
-            log.info("Focused Minecraft window")
-            return True
-        log.warning("Minecraft window not found")
-        return False
-
     def run(self):
-        self._focus_minecraft()
-        log.info("=== IkuyoMC Fisher started ===")
+        log.info("=== IkuyoMC Minigame Bot started ===")
         log.info(f"Screen: {self.sw}x{self.sh}")
+        log.info("Cast your rod and fish manually. I'll click when cursor is in the green zone.")
         if self.cfg.hud:
             self._hud_setup()
             self._log("HUD ready — press Q to quit")
-        if self.cfg.background:
-            self._log("Background mode — no focus steal needed")
         else:
-            log.info("Make sure Minecraft is focused. Press Ctrl+C to stop.")
-        self.set_state(State.CASTING)
-        self.wait_until = time.time() + random.uniform(self.cfg.cast_delay_min, self.cfg.cast_delay_max)
+            log.info("Press Ctrl+C to stop.")
 
         try:
             while self.state != State.STOP:
                 now = time.time()
-                self._tick()
+                self._tick(now)
                 if self.cfg.hud and self._hud_ready:
                     if not self._hud_draw(now):
                         break
@@ -359,85 +306,49 @@ class Fisher:
             if self.cfg.hud:
                 cv2.destroyAllWindows()
 
-    def _tick(self):
-        now = time.time()
+    def _tick(self, now):
+        if self.state == State.IDLE:
+            if self.find_bar():
+                self._log("Minigame detected!")
+                self.state = State.MINIGAME
+                self.timeout_until = now + self.cfg.minigame_timeout
+            return
 
-        if self.state == State.CASTING:
-            if now >= self.wait_until:
-                self.cast()
-                self.set_state(State.WAITING_BOBBER)
-                self.wait_until = now + 3.0
-
-        elif self.state == State.WAITING_BOBBER:
-            if now >= self.wait_until:
-                wait_time = random.uniform(self.cfg.wait_min, self.cfg.wait_max)
-                self.set_state(State.FISHING)
-                self.wait_until = now + wait_time
-                if self.cfg.debug:
-                    self._log(f"Fishing for {wait_time:.1f}s")
-
-        elif self.state == State.FISHING:
-            if now >= self.wait_until:
-                self.set_state(State.BITE_CHECK)
-                self.reel()
-                self.wait_until = now + 0.5
-
-        elif self.state == State.BITE_CHECK:
-            if now >= self.wait_until:
-                if self.find_bar():
-                    self.set_state(State.MINIGAME)
-                    self.wait_until = now + self.cfg.minigame_timeout
-                    self._log("Minigame detected!")
-                else:
-                    if self.cfg.debug:
-                        self._log("No bar found, re-casting")
-                    self.set_state(State.CASTING)
-                    self.wait_until = now + random.uniform(
-                        self.cfg.cast_delay_min, self.cfg.cast_delay_max
-                    )
-
-        elif self.state == State.MINIGAME:
-            if now >= self.wait_until:
-                self._log("Minigame timeout")
-                self.right_click()
-                self.set_state(State.REELING)
-                self.wait_until = now + 1.0
+        if self.state == State.MINIGAME:
+            if now >= self.timeout_until:
+                self._log("Minigame timeout — back to idle")
+                self.bar_rect = None
+                self.green_start = None
+                self.green_end = None
+                self.state = State.IDLE
                 return
 
             if self.bar_rect is None or self.green_start is None:
-                if not self.find_bar():
-                    return
-            else:
-                cx = self.find_cursor()
-                if cx is not None:
-                    tol = self.cfg.click_tolerance
-                    if self.green_start + tol <= cx <= self.green_end - tol:
-                        self._log("Cursor in green zone, clicking!")
-                        self.right_click()
-                        self.bar_rect = None
-                        self.green_start = None
-                        self.green_end = None
-                        self.set_state(State.REELING)
-                        self.wait_until = now + random.uniform(1.0, 2.0)
-                else:
+                self.find_bar()
+                return
+
+            cx = self.find_cursor()
+            if cx is not None:
+                tol = self.cfg.click_tolerance
+                if self.green_start + tol <= cx <= self.green_end - tol:
+                    self._log("Cursor in green zone, clicking!")
+                    self.right_click()
                     self.bar_rect = None
                     self.green_start = None
                     self.green_end = None
-
-        elif self.state == State.REELING:
-            if now >= self.wait_until:
-                self.set_state(State.CASTING)
-                self.wait_until = now + random.uniform(
-                    self.cfg.cast_delay_min, self.cfg.cast_delay_max
-                )
+                    self.state = State.IDLE
+                    return
+            else:
+                self.bar_rect = None
+                self.green_start = None
+                self.green_end = None
 
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="IkuyoMC.net fishing bot")
+    parser = argparse.ArgumentParser(description="IkuyoMC.net fishing minigame bot")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument("--hud", action="store_true", help="Show HUD overlay window")
-    parser.add_argument("--background", action="store_true", help="Click on background window (no focus steal)")
     args = parser.parse_args()
 
     cfg = Config()
@@ -446,8 +357,6 @@ if __name__ == "__main__":
         log.setLevel(logging.DEBUG)
     if args.hud:
         cfg.hud = True
-    if args.background:
-        cfg.background = True
 
     fisher = Fisher(cfg)
     fisher.run()
