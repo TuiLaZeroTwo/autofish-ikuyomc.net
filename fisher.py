@@ -13,6 +13,8 @@ import cv2
 import numpy as np
 import mss
 import pyautogui
+import win32gui
+import win32con
 
 pyautogui.PAUSE = 0
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -33,16 +35,7 @@ class Config:
     minigame_timeout: float = 30.0
     cast_delay_min: float = 0.5
     cast_delay_max: float = 1.5
-    catch_delay: float = 0.3
     scan_interval: float = 0.016
-    bobber_roi_top: float = 0.35
-    bobber_roi_bottom: float = 0.65
-    bobber_roi_left: float = 0.35
-    bobber_roi_right: float = 0.65
-    bobber_hue_low: int = 0
-    bobber_hue_high: int = 10
-    bobber_sat_min: int = 80
-    bobber_val_min: int = 80
     wait_min: float = 8.0
     wait_max: float = 25.0
     debug: bool = False
@@ -72,16 +65,7 @@ class Fisher:
         self.green_start: Optional[int] = None
         self.green_end: Optional[int] = None
         self.cursor_x: Optional[int] = None
-        self.bobber_pos: Optional[tuple] = None
         self.wait_until = 0.0
-        self.hsb_buf = np.zeros(3, dtype=np.float32)
-
-    def _rect(self, left_pct, top_pct, right_pct, bottom_pct):
-        l = int(self.sw * left_pct)
-        t = int(self.sh * top_pct)
-        r = int(self.sw * right_pct)
-        b = int(self.sh * bottom_pct)
-        return {"left": l, "top": t, "width": r - l, "height": b - t}
 
     def _center_rect(self, w_pct, h_pct):
         w = int(self.sw * w_pct)
@@ -237,7 +221,26 @@ class Fisher:
         self.state = state
         self.state_start = time.time()
 
+    def _focus_minecraft(self):
+        def enum_callback(hwnd, windows):
+            if win32gui.IsWindowVisible(hwnd):
+                title = win32gui.GetWindowText(hwnd)
+                if 'Minecraft' in title:
+                    windows.append(hwnd)
+
+        windows = []
+        win32gui.EnumWindows(enum_callback, windows)
+        if windows:
+            win32gui.ShowWindow(windows[0], win32con.SW_RESTORE)
+            win32gui.SetForegroundWindow(windows[0])
+            time.sleep(0.5)
+            log.info("Focused Minecraft window")
+            return True
+        log.warning("Minecraft window not found")
+        return False
+
     def run(self):
+        self._focus_minecraft()
         log.info("=== IkuyoMC Fisher started ===")
         log.info(f"Screen: {self.sw}x{self.sh}")
         log.info("Make sure Minecraft is focused. Press Ctrl+C to stop.")
