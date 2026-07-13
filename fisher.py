@@ -24,7 +24,7 @@ class Config:
     green_sat_min: float = 0.5
     green_val_min: float = 0.3
     white_sat_max: float = 0.2
-    white_val_min: float = 0.6
+    white_val_min: float = 0.4
     bar_width_pct: float = 0.40
     bar_height_pct: float = 0.055
     click_tolerance: int = 0
@@ -57,6 +57,7 @@ class Fisher:
         self._hud_ready = False
         self._last_hud_time = 0.0
         self._last_bar_msg = ""
+        self._cursor_misses = 0
 
     def _hud_log(self, msg):
         self.log_buffer.append(str(msg)[:80])
@@ -254,6 +255,9 @@ class Fisher:
                         else:
                             break
                     cx = scan_x + start_col
+                    if self.cfg.debug:
+                        loc = "above" if label == "top" else "below"
+                        self._log(f"Cursor {loc} bar at x={cx} green=[{self.green_start},{self.green_end}]")
                     return cx
         return None
 
@@ -329,6 +333,8 @@ class Fisher:
 
             cx = self.find_cursor()
             if cx is not None:
+                self._cursor_misses = 0
+                self.cursor_x = cx
                 tol = self.cfg.click_tolerance
                 if self.green_start + tol <= cx <= self.green_end - tol:
                     self._log("Cursor in green zone, clicking!")
@@ -336,12 +342,18 @@ class Fisher:
                     self.bar_rect = None
                     self.green_start = None
                     self.green_end = None
+                    self.cursor_x = None
                     self.state = State.IDLE
-                    return
             else:
-                self.bar_rect = None
-                self.green_start = None
-                self.green_end = None
+                self._cursor_misses += 1
+                if self.cfg.debug and self._cursor_misses == 1:
+                    self._log("Cursor not found, scanning...")
+                if self._cursor_misses > 60:
+                    self.bar_rect = None
+                    self.green_start = None
+                    self.green_end = None
+                    self.cursor_x = None
+                    self._cursor_misses = 0
 
 
 if __name__ == "__main__":
