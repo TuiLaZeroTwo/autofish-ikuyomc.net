@@ -16,6 +16,15 @@ import mss
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("fisher")
 
+try:
+    import easyocr
+    _ocr = easyocr.Reader(['vi'], gpu=False)
+    _ocr_available = True
+    log.info("EasyOCR loaded for success text detection")
+except Exception as e:
+    _ocr = None
+    _ocr_available = False
+
 
 @dataclass
 class Config:
@@ -63,6 +72,7 @@ class Fisher:
         self._cursor_tpl = self._load_cursor_template()
         self._prev_above: Optional[np.ndarray] = None
         self._prev_below: Optional[np.ndarray] = None
+        self._ocr_scan_counter = 0
 
     def _load_cursor_template(self):
         try:
@@ -314,6 +324,20 @@ class Fisher:
         pyautogui.FAILSAFE = False
         pyautogui.click(button="right")
 
+    def _check_success_text(self, now: float) -> bool:
+        if not _ocr_available:
+            return False
+        rect = {"left": self.sw // 4, "top": int(self.sh * 0.65),
+                "width": self.sw // 2, "height": int(self.sh * 0.2)}
+        img = np.array(self.sct.grab(rect))
+        img_bgr = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        results = _ocr.readtext(img_bgr)
+        for _, text, conf in results:
+            if conf > 0.5 and "thành công" in text.lower():
+                self._log(f"Success text detected: {text} (conf={conf:.2f})")
+                return True
+        return False
+
     def _reset_bar(self):
         self.bar_rect = None
         self.green_start = None
@@ -388,6 +412,12 @@ class Fisher:
                     self._log("Cursor not found, scanning...")
                 if self._cursor_misses > 60:
                     self._reset_bar()
+
+            self._ocr_scan_counter += 1
+            if self._ocr_scan_counter % 10 == 0 and self._check_success_text(now):
+                self._log("Success detected via OCR, minigame ended")
+                self._reset_bar()
+                self.state = State.IDLE
 
 
 if __name__ == "__main__":
