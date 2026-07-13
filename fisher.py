@@ -106,7 +106,8 @@ class Fisher:
         if cap_rect["width"] <= 0 or cap_rect["height"] <= 0:
             return False
         img = self.capture(cap_rect)
-        img_hsv = cv2.cvtColor(img, cv2.COLOR_BGRA2HSV)
+        img_bgr = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        img_hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
 
         center_hue = self.cfg.green_hue_center
         hue_range = self.cfg.green_hue_tolerance
@@ -194,7 +195,8 @@ class Fisher:
             img = self.capture(r)
             if img.size == 0:
                 continue
-            img_hsv = cv2.cvtColor(img, cv2.COLOR_BGRA2HSV)
+            img_bgr = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+            img_hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
             s = img_hsv[:, :, 1].astype(np.float32) / 255.0
             v = img_hsv[:, :, 2].astype(np.float32) / 255.0
             white_mask = (s < self.cfg.white_sat_max) & (v >= self.cfg.white_val_min)
