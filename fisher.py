@@ -15,6 +15,7 @@ import numpy as np
 import mss
 import pyautogui
 import win32gui
+import win32api
 import win32con
 
 pyautogui.PAUSE = 0
@@ -40,6 +41,7 @@ class Config:
     wait_min: float = 8.0
     wait_max: float = 25.0
     hud: bool = False
+    background: bool = False
     debug: bool = False
 
 
@@ -278,7 +280,24 @@ class Fisher:
                     return cx
         return None
 
+    def _find_minecraft_hwnd(self):
+        def enum_callback(hwnd, windows):
+            if win32gui.IsWindowVisible(hwnd):
+                title = win32gui.GetWindowText(hwnd)
+                if 'Minecraft' in title:
+                    windows.append(hwnd)
+        windows = []
+        win32gui.EnumWindows(enum_callback, windows)
+        return windows[0] if windows else None
+
     def right_click(self):
+        if self.cfg.background:
+            mc = self._find_minecraft_hwnd()
+            if mc:
+                lparam = win32api.MAKELONG(0, 0)
+                win32api.SendMessage(mc, win32con.WM_RBUTTONDOWN, win32con.MK_RBUTTON, lparam)
+                win32api.SendMessage(mc, win32con.WM_RBUTTONUP, 0, lparam)
+                return
         pyautogui.click(button="right")
 
     def cast(self):
@@ -301,17 +320,10 @@ class Fisher:
         self.state_start = time.time()
 
     def _focus_minecraft(self):
-        def enum_callback(hwnd, windows):
-            if win32gui.IsWindowVisible(hwnd):
-                title = win32gui.GetWindowText(hwnd)
-                if 'Minecraft' in title:
-                    windows.append(hwnd)
-
-        windows = []
-        win32gui.EnumWindows(enum_callback, windows)
-        if windows:
-            win32gui.ShowWindow(windows[0], win32con.SW_RESTORE)
-            win32gui.SetForegroundWindow(windows[0])
+        mc = self._find_minecraft_hwnd()
+        if mc:
+            win32gui.ShowWindow(mc, win32con.SW_RESTORE)
+            win32gui.SetForegroundWindow(mc)
             time.sleep(0.5)
             log.info("Focused Minecraft window")
             return True
@@ -325,6 +337,8 @@ class Fisher:
         if self.cfg.hud:
             self._hud_setup()
             self._log("HUD ready — press Q to quit")
+        if self.cfg.background:
+            self._log("Background mode — no focus steal needed")
         else:
             log.info("Make sure Minecraft is focused. Press Ctrl+C to stop.")
         self.set_state(State.CASTING)
@@ -423,6 +437,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="IkuyoMC.net fishing bot")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument("--hud", action="store_true", help="Show HUD overlay window")
+    parser.add_argument("--background", action="store_true", help="Click on background window (no focus steal)")
     args = parser.parse_args()
 
     cfg = Config()
@@ -431,6 +446,8 @@ if __name__ == "__main__":
         log.setLevel(logging.DEBUG)
     if args.hud:
         cfg.hud = True
+    if args.background:
+        cfg.background = True
 
     fisher = Fisher(cfg)
     fisher.run()
