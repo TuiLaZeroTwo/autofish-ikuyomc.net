@@ -61,6 +61,8 @@ class Fisher:
         self._last_bar_msg = ""
         self._cursor_misses = 0
         self._cursor_tpl = self._load_cursor_template()
+        self._prev_above: Optional[np.ndarray] = None
+        self._prev_below: Optional[np.ndarray] = None
 
     def _load_cursor_template(self):
         try:
@@ -245,6 +247,7 @@ class Fisher:
         if top_y + arrow_h > self.sh or bot_y + arrow_h > self.sh:
             return None
 
+        # Try template matching first
         if self._cursor_tpl is not None:
             tpl_w = self._cursor_tpl.shape[1]
             tpl_h = self._cursor_tpl.shape[0]
@@ -263,34 +266,33 @@ class Fisher:
                     if self.cfg.debug:
                         self._log(f"Cursor {label} bar (tmpl) at x={cx} conf={max_val:.2f}")
                     return cx
-            return None
 
-        # Fallback: HSV white detection
-        for label, y_pos in [("top", top_y), ("bot", bot_y)]:
+        # Motion detection: cursor is the only moving thing in the bar area
+        for label, y_pos, prev_key in [
+            ("above", top_y, "_prev_above"),
+            ("below", bot_y, "_prev_below"),
+        ]:
             r = {"left": scan_x, "top": y_pos, "width": scan_w, "height": arrow_h}
             img = self.capture(r)
             if img.size == 0:
                 continue
-            img_bgr = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-            img_hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
-            s = img_hsv[:, :, 1].astype(np.float32) / 255.0
-            v = img_hsv[:, :, 2].astype(np.float32) / 255.0
-            white_mask = (s < self.cfg.white_sat_max) & (v >= self.cfg.white_val_min)
-
-            for col in range(white_mask.shape[1]):
-                white_count = np.sum(white_mask[:, col])
-                if white_count >= 2:
-                    start_col = col
-                    while start_col > 0:
-                        cnt = np.sum(white_mask[:, start_col - 1])
-                        if cnt >= 1:
-                            start_col -= 1
-                        else:
-                            break
-                    cx = scan_x + start_col
+            gray = cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
+            prev = getattr(self, prev_key)
+            if prev is not None and prev.shape == gray.shape:
+                diff = cv2.absdiff(gray, prev)
+                _, thresh = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)
+                col_sums = np.sum(thresh, axis=0)
+                max_col = int(np.argmax(col_sums))
+                if col_sums[max_col] >= 3:
+                    start = max_col
+                    while start > 0 and col_sums[start - 1] >= 1:
+                        start -= 1
+                    cx = scan_x + start
                     if self.cfg.debug:
-                        self._log(f"Cursor {label} bar (hsv) at x={cx}")
+                        self._log(f"Cursor {label} bar (motion) at x={cx} peak={int(col_sums[max_col])}")
+                    setattr(self, prev_key, gray)
                     return cx
+            setattr(self, prev_key, gray)
         return None
 
     def right_click(self):
@@ -312,12 +314,16 @@ class Fisher:
         pyautogui.FAILSAFE = False
         pyautogui.click(button="right")
 
-    def _log(self, msg):
-        log.info(msg)
-        if self.cfg.hud:
-            self._hud_log(msg)
+    def _reset_bar(self):
+        self.bar_rect = None
+        self.green_start = None
+        self.green_end = None
+        self.cursor_x = None
+        self._cursor_misses = 0
+        self._prev_above = None
+        self._prev_below = None
 
-    def run(self):
+    def _log(self, msg):
         log.info("=== IkuyoMC Minigame Bot started ===")
         log.info(f"Screen: {self.sw}x{self.sh}")
         log.info("Cast your rod and fish manually. I'll click when cursor is in the green zone.")
@@ -353,9 +359,7 @@ class Fisher:
         if self.state == State.MINIGAME:
             if now >= self.timeout_until:
                 self._log("Minigame timeout — back to idle")
-                self.bar_rect = None
-                self.green_start = None
-                self.green_end = None
+                self._reset_bar()
                 self.state = State.IDLE
                 return
 
@@ -371,21 +375,14 @@ class Fisher:
                 if self.green_start + tol <= cx <= self.green_end - tol:
                     self._log("Cursor in green zone, clicking!")
                     self.right_click()
-                    self.bar_rect = None
-                    self.green_start = None
-                    self.green_end = None
-                    self.cursor_x = None
+                    self._reset_bar()
                     self.state = State.IDLE
             else:
                 self._cursor_misses += 1
                 if self.cfg.debug and self._cursor_misses == 1:
                     self._log("Cursor not found, scanning...")
                 if self._cursor_misses > 60:
-                    self.bar_rect = None
-                    self.green_start = None
-                    self.green_end = None
-                    self.cursor_x = None
-                    self._cursor_misses = 0
+                    self._reset_bar()
 
 
 if __name__ == "__main__":
