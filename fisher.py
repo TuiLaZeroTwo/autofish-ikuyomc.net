@@ -25,6 +25,8 @@ class Config:
     green_val_min: float = 0.3
     white_sat_max: float = 0.2
     white_val_min: float = 0.4
+    cursor_template: str = "img/image.png"
+    cursor_threshold: float = 0.6
     bar_width_pct: float = 0.40
     bar_height_pct: float = 0.055
     click_tolerance: int = 0
@@ -58,6 +60,18 @@ class Fisher:
         self._last_hud_time = 0.0
         self._last_bar_msg = ""
         self._cursor_misses = 0
+        self._cursor_tpl = self._load_cursor_template()
+
+    def _load_cursor_template(self):
+        try:
+            tpl = cv2.imread(self.cfg.cursor_template, cv2.IMREAD_GRAYSCALE)
+            if tpl is not None:
+                log.info(f"Loaded cursor template: {self.cfg.cursor_template} ({tpl.shape[1]}x{tpl.shape[0]})")
+                return tpl
+            log.warning(f"Could not load cursor template: {self.cfg.cursor_template}")
+        except Exception as e:
+            log.warning(f"Cursor template error: {e}")
+        return None
 
     def _hud_log(self, msg):
         self.log_buffer.append(str(msg)[:80])
@@ -222,19 +236,38 @@ class Fisher:
         if self.bar_rect is None:
             return None
         b = self.bar_rect
-        arrow_h = 10
+        arrow_h = 20
         top_y = max(0, b["top"] - arrow_h)
         bot_y = max(0, b["top"] + b["height"])
-        scan_w = min(b["width"] + 20, self.sw - b["left"])
+        scan_w = min(b["width"] + 40, self.sw - b["left"])
         scan_x = max(0, (self.sw - scan_w) // 2)
 
         if top_y + arrow_h > self.sh or bot_y + arrow_h > self.sh:
             return None
 
-        for label, r in [
-            ("top", {"left": scan_x, "top": top_y, "width": scan_w, "height": arrow_h}),
-            ("bot", {"left": scan_x, "top": bot_y, "width": scan_w, "height": arrow_h}),
-        ]:
+        if self._cursor_tpl is not None:
+            tpl_w = self._cursor_tpl.shape[1]
+            tpl_h = self._cursor_tpl.shape[0]
+            for label, y_pos in [("top", top_y), ("bot", bot_y)]:
+                r = {"left": scan_x, "top": y_pos, "width": scan_w, "height": arrow_h}
+                img = self.capture(r)
+                if img.size == 0:
+                    continue
+                gray = cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
+                if gray.shape[0] < tpl_h or gray.shape[1] < tpl_w:
+                    continue
+                result = cv2.matchTemplate(gray, self._cursor_tpl, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, max_loc = cv2.minMaxLoc(result)
+                if max_val >= self.cfg.cursor_threshold:
+                    cx = scan_x + max_loc[0] + tpl_w // 2
+                    if self.cfg.debug:
+                        self._log(f"Cursor {label} bar (tmpl) at x={cx} conf={max_val:.2f}")
+                    return cx
+            return None
+
+        # Fallback: HSV white detection
+        for label, y_pos in [("top", top_y), ("bot", bot_y)]:
+            r = {"left": scan_x, "top": y_pos, "width": scan_w, "height": arrow_h}
             img = self.capture(r)
             if img.size == 0:
                 continue
@@ -256,8 +289,7 @@ class Fisher:
                             break
                     cx = scan_x + start_col
                     if self.cfg.debug:
-                        loc = "above" if label == "top" else "below"
-                        self._log(f"Cursor {loc} bar at x={cx} green=[{self.green_start},{self.green_end}]")
+                        self._log(f"Cursor {label} bar (hsv) at x={cx}")
                     return cx
         return None
 
