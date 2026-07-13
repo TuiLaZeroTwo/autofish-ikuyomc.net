@@ -57,7 +57,7 @@ class State(Enum):
 class Fisher:
     def __init__(self, cfg: Optional[Config] = None):
         self.cfg = cfg or Config()
-        self.sct = mss.mss()
+        self.sct = mss.MSS()
         self.state = State.INIT
         self.monitor = self.sct.monitors[1]
         self.sw = self.monitor["width"]
