@@ -514,7 +514,8 @@ public class AutoFish extends Module {
             return;
         }
         cursorFbX = newCursorX;
-        log("Cursor " + cursorLoc + " bar at fbX=" + cursorFbX + " greenZone=[" + greenStartFb + "," + greenEndFb + "] inZone=" + (cursorFbX >= greenStartFb + clickTolerance.get() && cursorFbX <= greenEndFb - clickTolerance.get()));
+        int tol = clickTolerance.get();
+        log("Cursor " + cursorLoc + " bar at fbX=" + cursorFbX + " greenZone=[" + greenStartFb + "," + greenEndFb + "] inZone=" + (cursorFbX >= greenStartFb + tol && cursorFbX <= greenEndFb - tol));
         if (cursorFbX >= greenStartFb + tol && cursorFbX <= greenEndFb - tol) {
             log("Cursor in green zone, clicking!");
             useRod();
