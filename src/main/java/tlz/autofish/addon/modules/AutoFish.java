@@ -1,4 +1,4 @@
-package tlz.autofish.addon.modules;
+﻿package tlz.autofish.addon.modules;
 
 import tlz.autofish.addon.TLZAutoFish;
 import meteordevelopment.meteorclient.events.render.Render2DEvent;
@@ -632,6 +632,8 @@ public class AutoFish extends Module {
             catchDelayLeft = 0.0;
             hasSeenCursor = false;
             cursorLostTicks = 0;
+            prevCursorX = -1;
+            cursorVelocity = 0;
             debugHistory.clear();
         } else {
             useRod();
@@ -647,6 +649,8 @@ public class AutoFish extends Module {
         barFound = false;
         recheckDelay = 5;
         waitingTicks = 0;
+        prevCursorX = -1;
+        cursorVelocity = 0;
     }
 
     private void minigameClick() {
@@ -817,6 +821,9 @@ public class AutoFish extends Module {
 
     private void scanCursor() {
         if (barFbY < 0 || barFbW <= 0) return;
+
+        // Prevent clicking during the first 10 ticks while the UI is animating/rendering
+        if (minigameTimer < 10) return;
 
         int fbW = mc.getWindow().getFramebufferWidth();
         int fbH = mc.getWindow().getFramebufferHeight();
