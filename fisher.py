@@ -7,6 +7,7 @@ import random
 import logging
 from enum import Enum, auto
 from dataclasses import dataclass
+from collections import deque
 from typing import Optional
 
 import cv2
@@ -38,6 +39,7 @@ class Config:
     scan_interval: float = 0.016
     wait_min: float = 8.0
     wait_max: float = 25.0
+    hud: bool = False
     debug: bool = False
 
 
@@ -66,6 +68,78 @@ class Fisher:
         self.green_end: Optional[int] = None
         self.cursor_x: Optional[int] = None
         self.wait_until = 0.0
+        self.log_buffer = deque(maxlen=10)
+        self._hud_ready = False
+        self._last_hud_time = 0.0
+
+    def _hud_log(self, msg):
+        self.log_buffer.append(str(msg)[:80])
+
+    def _hud_setup(self):
+        cv2.namedWindow("Fisher HUD")
+        cv2.resizeWindow("Fisher HUD", 800, 600)
+        cv2.createTrackbar("Bar Width%", "Fisher HUD",
+            int(self.cfg.bar_width_pct * 100), 80,
+            lambda v: setattr(self.cfg, 'bar_width_pct', max(0.1, v / 100.0)))
+        cv2.createTrackbar("Bar Height%", "Fisher HUD",
+            int(self.cfg.bar_height_pct * 100), 20,
+            lambda v: setattr(self.cfg, 'bar_height_pct', max(0.01, v / 100.0)))
+        cv2.createTrackbar("Hue Tolerance", "Fisher HUD",
+            self.cfg.green_hue_tolerance, 90,
+            lambda v: setattr(self.cfg, 'green_hue_tolerance', max(5, v)))
+        self._hud_ready = True
+
+    def _hud_draw(self, now):
+        rect = self._center_rect(0.6, 0.4)
+        img = self.capture(rect)
+        img_bgr = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        h, w = img_bgr.shape[:2]
+
+        scan_w = int(w * (self.cfg.bar_width_pct / 0.6))
+        scan_h = int(h * (self.cfg.bar_height_pct / 0.4))
+        scan_l = (w - scan_w) // 2
+        scan_t = (h - scan_h) // 2
+        cv2.rectangle(img_bgr, (scan_l, scan_t),
+                     (scan_l + scan_w, scan_t + scan_h),
+                     (80, 80, 80), 1)
+
+        if self.bar_rect is not None:
+            bl = self.bar_rect["left"] - rect["left"]
+            bt = self.bar_rect["top"] - rect["top"]
+            bw = self.bar_rect["width"]
+            bh = self.bar_rect["height"]
+            cv2.rectangle(img_bgr, (bl, bt), (bl + bw, bt + bh), (255, 0, 0), 2)
+            if self.green_start is not None and self.green_end is not None:
+                gl = self.green_start - rect["left"]
+                gr = self.green_end - rect["left"]
+                mid_y = bt + bh // 2
+                cv2.line(img_bgr, (gl, mid_y), (gr, mid_y), (0, 255, 0), 3)
+            if self.cursor_x is not None:
+                cx = self.cursor_x - rect["left"]
+                cv2.circle(img_bgr, (cx, bt - 5), 4, (255, 255, 255), -1)
+                cv2.circle(img_bgr, (cx, bt + bh + 5), 4, (255, 255, 255), -1)
+
+        fps = 1.0 / (now - self._last_hud_time + 0.001)
+        self._last_hud_time = now
+        cv2.putText(img_bgr, f"State:{self.state.name} FPS:{fps:.0f}", (5, 12),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.35, (200, 200, 200), 1)
+
+        log_h = 80
+        log_panel = np.zeros((log_h, w, 3), dtype=np.uint8)
+        for i, msg in enumerate(self.log_buffer):
+            cv2.putText(log_panel, msg, (5, 13 + i * 13),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.3, (180, 180, 180), 1)
+
+        display = np.vstack([img_bgr, log_panel])
+        if display.shape[0] > 700:
+            sc = 700.0 / display.shape[0]
+            display = cv2.resize(display, (int(display.shape[1] * sc), 700))
+
+        cv2.imshow("Fisher HUD", display)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            self.state = State.STOP
+            return False
+        return True
 
     def _center_rect(self, w_pct, h_pct):
         w = int(self.sw * w_pct)
@@ -154,7 +228,7 @@ class Fisher:
         self.green_start = best_gstart
         self.green_end = best_gend
         if self.cfg.debug:
-            log.info(f"Bar found @ y={green_fb_y} green=[{best_gstart},{best_gend}]")
+            self._log(f"Bar found @ y={green_fb_y} green=[{best_gstart},{best_gend}]")
         return True
 
     def find_cursor(self) -> Optional[int]:
@@ -200,7 +274,7 @@ class Fisher:
                         loc = "above" if label == "top" else "below"
                         in_zone = self.green_start is not None and self.green_end is not None and \
                             self.green_start + self.cfg.click_tolerance <= cx <= self.green_end - self.cfg.click_tolerance
-                        log.info(f"Cursor {loc} bar at x={cx} green=[{self.green_start},{self.green_end}] inZone={in_zone}")
+                        self._log(f"Cursor {loc} bar at x={cx} green=[{self.green_start},{self.green_end}] inZone={in_zone}")
                     return cx
         return None
 
@@ -209,13 +283,18 @@ class Fisher:
 
     def cast(self):
         if self.cfg.debug:
-            log.info("Casting rod")
+            self._log("Casting rod")
         self.right_click()
 
     def reel(self):
         if self.cfg.debug:
-            log.info("Reeling")
+            self._log("Reeling")
         self.right_click()
+
+    def _log(self, msg):
+        log.info(msg)
+        if self.cfg.hud:
+            self._hud_log(msg)
 
     def set_state(self, state: State):
         self.state = state
@@ -243,16 +322,28 @@ class Fisher:
         self._focus_minecraft()
         log.info("=== IkuyoMC Fisher started ===")
         log.info(f"Screen: {self.sw}x{self.sh}")
-        log.info("Make sure Minecraft is focused. Press Ctrl+C to stop.")
+        if self.cfg.hud:
+            self._hud_setup()
+            self._log("HUD ready — press Q to quit")
+        else:
+            log.info("Make sure Minecraft is focused. Press Ctrl+C to stop.")
         self.set_state(State.CASTING)
         self.wait_until = time.time() + random.uniform(self.cfg.cast_delay_min, self.cfg.cast_delay_max)
 
         try:
             while self.state != State.STOP:
+                now = time.time()
                 self._tick()
-                time.sleep(self.cfg.scan_interval)
+                if self.cfg.hud and self._hud_ready:
+                    if not self._hud_draw(now):
+                        break
+                else:
+                    time.sleep(self.cfg.scan_interval)
         except KeyboardInterrupt:
-            log.info("Stopped by user")
+            self._log("Stopped by user")
+        finally:
+            if self.cfg.hud:
+                cv2.destroyAllWindows()
 
     def _tick(self):
         now = time.time()
@@ -269,7 +360,7 @@ class Fisher:
                 self.set_state(State.FISHING)
                 self.wait_until = now + wait_time
                 if self.cfg.debug:
-                    log.info(f"Fishing for {wait_time:.1f}s")
+                    self._log(f"Fishing for {wait_time:.1f}s")
 
         elif self.state == State.FISHING:
             if now >= self.wait_until:
@@ -282,10 +373,10 @@ class Fisher:
                 if self.find_bar():
                     self.set_state(State.MINIGAME)
                     self.wait_until = now + self.cfg.minigame_timeout
-                    log.info("Minigame detected!")
+                    self._log("Minigame detected!")
                 else:
                     if self.cfg.debug:
-                        log.info("No bar found, re-casting")
+                        self._log("No bar found, re-casting")
                     self.set_state(State.CASTING)
                     self.wait_until = now + random.uniform(
                         self.cfg.cast_delay_min, self.cfg.cast_delay_max
@@ -293,7 +384,7 @@ class Fisher:
 
         elif self.state == State.MINIGAME:
             if now >= self.wait_until:
-                log.info("Minigame timeout")
+                self._log("Minigame timeout")
                 self.right_click()
                 self.set_state(State.REELING)
                 self.wait_until = now + 1.0
@@ -307,7 +398,7 @@ class Fisher:
                 if cx is not None:
                     tol = self.cfg.click_tolerance
                     if self.green_start + tol <= cx <= self.green_end - tol:
-                        log.info("Cursor in green zone, clicking!")
+                        self._log("Cursor in green zone, clicking!")
                         self.right_click()
                         self.bar_rect = None
                         self.green_start = None
@@ -331,12 +422,15 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="IkuyoMC.net fishing bot")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument("--hud", action="store_true", help="Show HUD overlay window")
     args = parser.parse_args()
 
     cfg = Config()
     if args.debug:
         cfg.debug = True
         log.setLevel(logging.DEBUG)
+    if args.hud:
+        cfg.hud = True
 
     fisher = Fisher(cfg)
     fisher.run()
