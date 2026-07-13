@@ -324,6 +324,11 @@ class Fisher:
         self._prev_below = None
 
     def _log(self, msg):
+        log.info(msg)
+        if self.cfg.hud:
+            self._hud_log(msg)
+
+    def run(self):
         log.info("=== IkuyoMC Minigame Bot started ===")
         log.info(f"Screen: {self.sw}x{self.sh}")
         log.info("Cast your rod and fish manually. I'll click when cursor is in the green zone.")
